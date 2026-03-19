@@ -1,0 +1,7 @@
+{
+  "name": "KCSE AI Exam Platform",
+  "description": "A comprehensive platform for KCSE past papers with AI-powered marking for theory, math, and practical experiments.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
