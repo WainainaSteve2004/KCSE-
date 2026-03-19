@@ -1,5 +1,6 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from './lib/supabase';
 import { 
   BookOpen, 
   GraduationCap, 
@@ -260,8 +261,21 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
 const Dashboard = () => {
   const auth = useContext(AuthContext);
   const [stats, setStats] = useState<any>(null);
+  const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'error'>('checking');
 
   useEffect(() => {
+    const checkSupabase = async () => {
+      try {
+        const { data, error } = await supabase.from('subjects').select('count', { count: 'exact', head: true });
+        if (error) throw error;
+        setSupabaseStatus('connected');
+      } catch (err) {
+        console.error('Supabase connection error:', err);
+        setSupabaseStatus('error');
+      }
+    };
+    checkSupabase();
+
     if (auth?.user?.role !== 'student') {
       fetch('/api/analytics', {
         headers: { 'Authorization': `Bearer ${auth?.token}` }
@@ -273,9 +287,23 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-3xl font-bold text-zinc-900 capitalize">{auth?.user?.role} Dashboard</h1>
-        <p className="text-zinc-500 mt-1">Welcome back, {auth?.user?.name}. Here's what's happening today.</p>
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-zinc-900 capitalize">{auth?.user?.role} Dashboard</h1>
+          <p className="text-zinc-500 mt-1">Welcome back, {auth?.user?.name}. Here's what's happening today.</p>
+        </div>
+        <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold border transition-all ${
+          supabaseStatus === 'connected' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+          supabaseStatus === 'error' ? 'bg-red-50 text-red-600 border-red-200' :
+          'bg-zinc-50 text-zinc-400 border-zinc-200'
+        }`}>
+          <div className={`w-2 h-2 rounded-full ${
+            supabaseStatus === 'connected' ? 'bg-emerald-500' :
+            supabaseStatus === 'error' ? 'bg-red-500' :
+            'bg-zinc-300 animate-pulse'
+          }`} />
+          Supabase: {supabaseStatus === 'connected' ? 'Connected' : supabaseStatus === 'error' ? 'Disconnected' : 'Checking...'}
+        </div>
       </header>
 
       {auth?.user?.role !== 'student' && stats && (

@@ -71,8 +71,8 @@ export async function markMathAnswer(question: string, markingScheme: string, st
   return JSON.parse(response.text || "{}");
 }
 
-export async function analyzePracticalImage(question: string, base64Image: string, studentExplanation: string, maxMarks: number) {
-  const model = "gemini-2.5-flash-image";
+export async function analyzePracticalImage(question: string, base64Image: string | null, studentExplanation: string, maxMarks: number, imageUrl: string | null = null) {
+  const model = "gemini-3-flash-preview";
   const prompt = `
     Analyze this image of a science experiment/practical setup.
     Question Context: ${question}
@@ -82,43 +82,38 @@ export async function analyzePracticalImage(question: string, base64Image: strin
     Identify the apparatus, chemicals, and the experiment being performed.
     Evaluate if the setup is correct and if the student's explanation matches the visual evidence.
     Provide a score out of ${maxMarks}, an analysis of the image, and an explanation of the outcome.
+    Return the result in JSON format with keys: score, analysis, explanation.
   `;
 
-  const response = await ai.models.generateContent({
+  let imagePart;
+  if (imageUrl) {
+    // Fetch image from URL and convert to base64
+    const response = await fetch(imageUrl);
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    imagePart = {
+      inlineData: {
+        mimeType: "image/jpeg",
+        data: base64
+      }
+    };
+  } else if (base64Image) {
+    imagePart = {
+      inlineData: {
+        mimeType: "image/jpeg",
+        data: base64Image.split(',')[1] || base64Image
+      }
+    };
+  } else {
+    throw new Error("No image provided for practical question");
+  }
+
+  const responseJson = await ai.models.generateContent({
     model,
     contents: {
       parts: [
         { text: prompt },
-        {
-          inlineData: {
-            mimeType: "image/jpeg",
-            data: base64Image.split(',')[1] || base64Image
-          }
-        }
-      ]
-    },
-    config: {
-      // responseMimeType: "application/json" // Not supported for nano banana series models as per instructions
-    }
-  });
-
-  // Since responseMimeType: "application/json" is not supported for gemini-2.5-flash-image,
-  // we might need to parse the text or use a different model for structured output if needed.
-  // But for now, let's try to get a structured-like text and parse it manually or just return text.
-  // Actually, I'll use gemini-3-flash-preview for the analysis if I need JSON, but it doesn't support images as well as the image model.
-  // Wait, gemini-3-flash-preview DOES support images. Let's use it for JSON.
-  
-  const responseJson = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: {
-      parts: [
-        { text: prompt + "\nReturn the result in JSON format with keys: score, analysis, explanation." },
-        {
-          inlineData: {
-            mimeType: "image/jpeg",
-            data: base64Image.split(',')[1] || base64Image
-          }
-        }
+        imagePart
       ]
     },
     config: {
