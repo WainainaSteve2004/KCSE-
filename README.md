@@ -1,20 +1,40 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# KCSE AI Exam Platform
 
-# Run and deploy your AI Studio app
+This is a full-stack KCSE AI Exam Platform built with React, Vite, Express, and Supabase.
 
-This contains everything you need to run your app locally.
+## Vercel Deployment
 
-View your app in AI Studio: https://ai.studio/apps/f93efd78-96b1-42a7-80ea-ca3586c610df
+This project is configured for easy deployment to Vercel.
 
-## Run Locally
+### 1. Prerequisites
 
-**Prerequisites:**  Node.js
+- A [Vercel](https://vercel.com) account.
+- A [Supabase](https://supabase.com) project.
 
+### 2. Environment Variables
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Set the following environment variables in your Vercel project settings:
+
+- `SUPABASE_URL`: Your Supabase project URL.
+- `SUPABASE_ANON_KEY`: Your Supabase anonymous API key.
+- `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role API key (required for backend operations).
+- `JWT_SECRET`: A secret key for JWT authentication (e.g., `kcse-secret-key-2026`).
+- `GEMINI_API_KEY`: Your Google Gemini API key.
+
+### 3. Deployment Steps
+
+1. Connect your GitHub/GitLab/Bitbucket repository to Vercel.
+2. Vercel will automatically detect the Vite configuration and the `vercel.json` routing.
+3. The build command should be `npm run build`.
+4. The output directory should be `dist`.
+
+### 4. Database Setup
+
+Ensure you have run the SQL script in `supabase_schema.sql` in your Supabase SQL Editor to set up the required tables and policies.
+
+## Local Development
+
+1. Install dependencies: `npm install`
+2. Create a `.env` file based on `.env.example`.
+3. Start the dev server: `npm run dev`
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.

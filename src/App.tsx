@@ -1,6 +1,5 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase } from './lib/supabase';
 import { 
   BookOpen, 
   GraduationCap, 
@@ -20,6 +19,10 @@ import {
   Calculator,
   FlaskConical
 } from 'lucide-react';
+import BulkExamUploader from './components/BulkExamUploader';
+import SubjectManager from './components/SubjectManager';
+import Results from './components/Results';
+import { markTheoryAnswer, markMathAnswer, analyzePracticalImage } from './services/aiService';
 
 // --- Types ---
 type Role = 'admin' | 'teacher' | 'student' | 'developer';
@@ -37,7 +40,7 @@ interface AuthContextType {
   logout: () => void;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+export const AuthContext = createContext<AuthContextType | null>(null);
 
 // --- Components ---
 
@@ -76,6 +79,8 @@ const Sidebar = ({ currentTab, setTab }: { currentTab: string, setTab: (t: strin
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'teacher', 'student', 'developer'] },
     { id: 'exams', label: 'Exams', icon: FileText, roles: ['admin', 'teacher', 'student', 'developer'] },
+    { id: 'subjects', label: 'Subjects', icon: BookOpen, roles: ['admin', 'developer'] },
+    { id: 'bulk-uploader', label: 'Bulk Uploader', icon: Upload, roles: ['admin', 'developer'] },
     { id: 'results', label: 'Results', icon: CheckCircle2, roles: ['admin', 'teacher', 'student', 'developer'] },
     { id: 'users', label: 'Users', icon: Users, roles: ['admin', 'developer'] },
     { id: 'analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'teacher', 'developer'] },
@@ -111,24 +116,15 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
   const [role, setRole] = useState<Role>('student');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const demoAccounts = [
-    { role: 'Developer', email: 'developer@kcse.ai', password: 'Dev@123', icon: BrainCircuit, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { role: 'Admin', email: 'admin@kcse.ai', password: 'Admin@123', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { role: 'Teacher', email: 'teacher@kcse.ai', password: 'Teacher@123', icon: GraduationCap, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-    { role: 'Student', email: 'student@kcse.ai', password: 'Student@123', icon: BookOpen, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-  ];
-
-  const autofill = (acc: any) => {
-    setEmail(acc.email);
-    setPassword(acc.password);
-    setIsRegister(false);
-  };
+  const [success, setSuccess] = useState('');
+  const [showTroubleshoot, setShowTroubleshoot] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccess('');
+    setShowTroubleshoot(false);
     
     const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
     const body = isRegister ? { name, email, password, role } : { email, password };
@@ -141,9 +137,18 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
       });
       const data = await res.json();
       if (res.ok) {
-        onAuth(data.token, data.user);
+        if (isRegister) {
+          setSuccess(data.message || 'Registration successful. Please log in.');
+          setIsRegister(false);
+          setPassword('');
+        } else {
+          onAuth(data.token, data.user);
+        }
       } else {
         setError(data.error || 'Authentication failed');
+        if (data.error?.includes('permission denied')) {
+          setShowTroubleshoot(true);
+        }
       }
     } catch (err) {
       setError('Connection error');
@@ -208,10 +213,39 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
             </div>
           )}
 
+          {success && (
+            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span className="flex-1">{success}</span>
+            </div>
+          )}
+
           {error && (
-            <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              {error}
+            <div className="flex flex-col gap-2">
+              <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span className="flex-1">{error}</span>
+              </div>
+              {showTroubleshoot && (
+                <div className="p-4 bg-zinc-900 text-zinc-100 rounded-xl text-[11px] flex flex-col gap-2 shadow-lg border border-zinc-700">
+                  <p className="font-bold text-indigo-400 uppercase tracking-wider">Troubleshooting Guide</p>
+                  <p>This error means Supabase is blocking the registration. Follow these steps:</p>
+                  <div className="space-y-2">
+                    <p>1. Open your <b>Supabase SQL Editor</b>.</p>
+                    <p>2. Run this command to fix permissions:</p>
+                    <pre className="bg-black/50 p-2 rounded border border-zinc-700 font-mono text-indigo-300 select-all">
+                      ALTER TABLE users DISABLE ROW LEVEL SECURITY;
+                    </pre>
+                    <p>3. If it still fails, ensure your <b>SUPABASE_SERVICE_ROLE_KEY</b> is added to AI Studio Secrets.</p>
+                    <hr className="border-zinc-700 my-2" />
+                    <p className="font-bold text-indigo-400 uppercase tracking-wider">Resetting Database (DANGER)</p>
+                    <p>To remove all data and start fresh, run this in your SQL Editor:</p>
+                    <pre className="bg-black/50 p-2 rounded border border-zinc-700 font-mono text-indigo-300 select-all overflow-x-auto">
+                      {`TRUNCATE results, student_answers, questions, exams, subjects, users CASCADE;`}
+                    </pre>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -232,27 +266,6 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
             {isRegister ? 'Already have an account? Login' : "Don't have an account? Register"}
           </button>
         </div>
-
-        {!isRegister && (
-          <div className="mt-10 pt-8 border-t border-zinc-100">
-            <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest text-center mb-6">Demo Credentials (Click to Autofill)</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {demoAccounts.map((acc) => (
-                <button
-                  key={acc.role}
-                  onClick={() => autofill(acc)}
-                  className="flex flex-col items-center p-4 rounded-2xl border border-zinc-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group"
-                >
-                  <div className={`${acc.bg} ${acc.color} p-2 rounded-xl mb-2 group-hover:scale-110 transition-transform`}>
-                    <acc.icon className="w-5 h-5" />
-                  </div>
-                  <span className="text-xs font-bold text-zinc-900">{acc.role}</span>
-                  <span className="text-[10px] text-zinc-400 mt-1">{acc.password}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </motion.div>
     </div>
   );
@@ -261,49 +274,25 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
 const Dashboard = () => {
   const auth = useContext(AuthContext);
   const [stats, setStats] = useState<any>(null);
-  const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'error'>('checking');
 
   useEffect(() => {
-    const checkSupabase = async () => {
-      try {
-        const { data, error } = await supabase.from('subjects').select('count', { count: 'exact', head: true });
-        if (error) throw error;
-        setSupabaseStatus('connected');
-      } catch (err) {
-        console.error('Supabase connection error:', err);
-        setSupabaseStatus('error');
-      }
-    };
-    checkSupabase();
-
     if (auth?.user?.role !== 'student') {
       fetch('/api/analytics', {
         headers: { 'Authorization': `Bearer ${auth?.token}` }
       })
-      .then(res => res.json())
-      .then(setStats);
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && !data.error) setStats(data);
+      })
+      .catch(() => setStats(null));
     }
   }, []);
 
   return (
     <div className="space-y-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-zinc-900 capitalize">{auth?.user?.role} Dashboard</h1>
-          <p className="text-zinc-500 mt-1">Welcome back, {auth?.user?.name}. Here's what's happening today.</p>
-        </div>
-        <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold border transition-all ${
-          supabaseStatus === 'connected' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-          supabaseStatus === 'error' ? 'bg-red-50 text-red-600 border-red-200' :
-          'bg-zinc-50 text-zinc-400 border-zinc-200'
-        }`}>
-          <div className={`w-2 h-2 rounded-full ${
-            supabaseStatus === 'connected' ? 'bg-emerald-500' :
-            supabaseStatus === 'error' ? 'bg-red-500' :
-            'bg-zinc-300 animate-pulse'
-          }`} />
-          Supabase: {supabaseStatus === 'connected' ? 'Connected' : supabaseStatus === 'error' ? 'Disconnected' : 'Checking...'}
-        </div>
+      <header>
+        <h1 className="text-3xl font-bold text-zinc-900 capitalize">{auth?.user?.role} Dashboard</h1>
+        <p className="text-zinc-500 mt-1">Welcome back, {auth?.user?.name}. Here's what's happening today.</p>
       </header>
 
       {auth?.user?.role !== 'student' && stats && (
@@ -335,18 +324,9 @@ const Dashboard = () => {
         <div className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm">
           <h2 className="text-xl font-bold text-zinc-900 mb-6">Recent Activity</h2>
           <div className="space-y-6">
-            {[1, 2, 3].map((_, i) => (
-              <div key={i} className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-500">
-                  <Clock className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-zinc-900">Biology Paper 1 - Practical</p>
-                  <p className="text-xs text-zinc-500">Submitted 2 hours ago • Marked by AI</p>
-                </div>
-                <div className="ml-auto text-emerald-600 font-bold">84%</div>
-              </div>
-            ))}
+            <div className="p-8 text-center border-2 border-dashed border-zinc-100 rounded-3xl">
+              <p className="text-zinc-400 text-sm">No recent activity to show.</p>
+            </div>
           </div>
         </div>
         
@@ -361,6 +341,50 @@ const Dashboard = () => {
           <BrainCircuit className="absolute -right-8 -bottom-8 w-48 h-48 text-indigo-500/30" />
         </div>
       </div>
+
+      {auth?.user?.role === 'developer' && (
+        <div className="bg-zinc-900 p-8 rounded-3xl text-white border border-zinc-700 shadow-xl">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-indigo-600 p-2 rounded-lg">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <h2 className="text-xl font-bold">Developer Tools</h2>
+          </div>
+          <p className="text-zinc-400 mb-6">These tools are only visible to developers. Use with caution.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button 
+              onClick={async () => {
+                if (window.confirm('DANGER: This will permanently delete all users, exams, and results. Are you sure?')) {
+                  try {
+                    const res = await fetch('/api/admin/reset', {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${auth?.token}` }
+                    });
+                    if (res.ok) {
+                      alert('Database reset successfully. You will be logged out.');
+                      auth.logout();
+                    } else {
+                      const data = await res.json();
+                      alert(data.error || 'Reset failed');
+                    }
+                  } catch (err) {
+                    alert('Connection error');
+                  }
+                }
+              }}
+              className="px-6 py-3 bg-red-600/10 text-red-500 border border-red-600/20 rounded-xl font-bold hover:bg-red-600 hover:text-white transition-all text-center"
+            >
+              Reset Entire Database
+            </button>
+            <div className="p-4 bg-zinc-800/50 rounded-xl border border-zinc-700">
+              <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1">SQL Snippet</p>
+              <code className="text-[10px] text-indigo-400 select-all">
+                TRUNCATE results, student_answers, questions, exams, subjects, users CASCADE;
+              </code>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -374,8 +398,9 @@ const ExamList = ({ onSelectExam }: { onSelectExam: (id: number) => void }) => {
     fetch('/api/exams', {
       headers: { 'Authorization': `Bearer ${auth?.token}` }
     })
-    .then(res => res.json())
-    .then(setExams);
+    .then(res => res.ok ? res.json() : [])
+    .then(data => Array.isArray(data) ? setExams(data) : setExams([]))
+    .catch(() => setExams([]));
   }, []);
 
   return (
@@ -385,7 +410,7 @@ const ExamList = ({ onSelectExam }: { onSelectExam: (id: number) => void }) => {
           <h1 className="text-3xl font-bold text-zinc-900">Available Exams</h1>
           <p className="text-zinc-500 mt-1">Select a paper to start your examination.</p>
         </div>
-        {auth?.user?.role === 'admin' && (
+        {(auth?.user?.role === 'admin' || auth?.user?.role === 'teacher' || auth?.user?.role === 'developer') && (
           <button 
             onClick={() => setShowCreate(true)}
             className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all"
@@ -397,7 +422,7 @@ const ExamList = ({ onSelectExam }: { onSelectExam: (id: number) => void }) => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {exams.map((exam) => (
+        {Array.isArray(exams) && exams.map((exam) => (
           <motion.div 
             key={exam.id}
             whileHover={{ y: -5 }}
@@ -414,14 +439,11 @@ const ExamList = ({ onSelectExam }: { onSelectExam: (id: number) => void }) => {
               </div>
             </div>
             <h3 className="text-lg font-bold text-zinc-900 group-hover:text-indigo-600 transition-colors">{exam.title}</h3>
-            <p className="text-zinc-500 text-sm mt-2 line-clamp-2">Comprehensive KCSE past paper covering core curriculum topics.</p>
+            <p className="text-zinc-500 text-sm mt-2 line-clamp-2">Test your knowledge in {exam.subject_name}.</p>
             <div className="mt-6 flex items-center justify-between">
               <div className="flex -space-x-2">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-zinc-200" />
-                ))}
-                <div className="w-8 h-8 rounded-full border-2 border-white bg-zinc-100 flex items-center justify-center text-[10px] font-bold text-zinc-500">
-                  +12
+                <div className="w-8 h-8 rounded-full border-2 border-white bg-zinc-100 flex items-center justify-center text-[10px] font-bold text-zinc-400">
+                  ?
                 </div>
               </div>
               <ChevronRight className="w-5 h-5 text-zinc-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
@@ -448,9 +470,14 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
   const [subjectId, setSubjectId] = useState('');
   const [duration, setDuration] = useState('120');
   const [questions, setQuestions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/subjects').then(res => res.json()).then(setSubjects);
+    fetch('/api/subjects')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => Array.isArray(data) ? setSubjects(data) : setSubjects([]))
+      .catch(() => setSubjects([]));
   }, []);
 
   const addQuestion = () => {
@@ -458,15 +485,33 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
   };
 
   const handleSubmit = async () => {
-    const res = await fetch('/api/exams', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${auth?.token}`
-      },
-      body: JSON.stringify({ title, subject_id: subjectId, duration, questions })
-    });
-    if (res.ok) onCreated();
+    if (!title || !subjectId || questions.length === 0) {
+      setError('Please provide a title, subject, and at least one question.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/exams', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${auth?.token}`
+        },
+        body: JSON.stringify({ title, subject_id: subjectId, duration, questions })
+      });
+      if (res.ok) {
+        onCreated();
+      } else {
+        const data = await res.json();
+        setError(data.error || 'Failed to save exam');
+      }
+    } catch (err) {
+      setError('Connection error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -491,7 +536,7 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
               <label className="block text-sm font-medium text-zinc-700 mb-1">Subject</label>
               <select value={subjectId} onChange={e => setSubjectId(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none bg-white">
                 <option value="">Select Subject</option>
-                {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {Array.isArray(subjects) && subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
@@ -573,9 +618,22 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
           </div>
         </div>
 
-        <div className="p-6 border-t border-zinc-200 flex justify-end gap-4">
-          <button onClick={onClose} className="px-6 py-3 rounded-xl font-bold text-zinc-500 hover:bg-zinc-100">Cancel</button>
-          <button onClick={handleSubmit} className="px-8 py-3 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200">Save Exam</button>
+        <div className="p-6 border-t border-zinc-200 flex items-center justify-between">
+          <div className="text-red-500 text-sm font-medium">
+            {error && <span className="flex items-center gap-1"><AlertCircle className="w-4 h-4" /> {error}</span>}
+          </div>
+          <div className="flex gap-4">
+            <button onClick={onClose} className="px-6 py-3 rounded-xl font-bold text-zinc-500 hover:bg-zinc-100">Cancel</button>
+            <button 
+              onClick={handleSubmit} 
+              disabled={loading}
+              className={`px-8 py-3 rounded-xl font-bold text-white shadow-lg transition-all ${
+                loading ? 'bg-zinc-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
+              }`}
+            >
+              {loading ? 'Saving...' : 'Save Exam'}
+            </button>
+          </div>
         </div>
       </motion.div>
     </div>
@@ -634,16 +692,56 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
 
   const handleSubmit = async () => {
     setSubmitting(true);
-    const payload = {
-      exam_id: examId,
-      answers: Object.entries(answers).map(([qId, data]: [string, any]) => ({
-        question_id: parseInt(qId),
-        answer_text: data.text || '',
-        image_data: data.image || null
-      }))
-    };
-
     try {
+      const results = [];
+      const answersToInsert = [];
+      let totalScore = 0;
+      let maxPossibleScore = 0;
+
+      for (const [qId, data] of Object.entries(answers) as [string, any][]) {
+        const question = exam.questions.find((q: any) => q.id === parseInt(qId));
+        if (!question) continue;
+
+        maxPossibleScore += question.marks;
+        let aiResult;
+
+        try {
+          if (question.type === 'theory') {
+            aiResult = await markTheoryAnswer(question.question_text, question.marking_scheme, data.text || '', question.marks);
+          } else if (question.type === 'math') {
+            aiResult = await markMathAnswer(question.question_text, question.marking_scheme, data.text || '', question.marks);
+          } else if (question.type === 'practical') {
+            aiResult = await analyzePracticalImage(question.question_text, data.image || '', data.text || '', question.marks);
+          }
+        } catch (aiErr) {
+          console.error("AI Marking error for question", qId, aiErr);
+          aiResult = { score: 0, explanation: "AI marking failed for this question." };
+        }
+
+        const score = aiResult?.score || 0;
+        const feedback = aiResult?.explanation || aiResult?.analysis || aiResult?.solution || "No feedback provided";
+        totalScore += score;
+
+        results.push({ question_id: parseInt(qId), score, feedback });
+        answersToInsert.push({
+          question_id: parseInt(qId),
+          answer_text: data.text || '',
+          image_data: data.image || null,
+          ai_score: score,
+          ai_feedback: feedback
+        });
+      }
+
+      const percentage = maxPossibleScore > 0 ? (totalScore / maxPossibleScore) * 100 : 0;
+
+      const payload = {
+        exam_id: examId,
+        totalScore,
+        percentage,
+        results,
+        answersToInsert
+      };
+
       const res = await fetch('/api/submissions', {
         method: 'POST',
         headers: { 
@@ -653,7 +751,11 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
         body: JSON.stringify(payload)
       });
       const data = await res.json();
-      setResults(data);
+      if (res.ok) {
+        setResults(data);
+      } else {
+        console.error("Submission failed:", data.error);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -698,7 +800,7 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
 
         <div className="space-y-6">
           <h2 className="text-2xl font-bold text-zinc-900">Detailed Feedback</h2>
-          {results.results.map((res: any, i: number) => {
+          {results?.results?.map((res: any, i: number) => {
             const q = exam.questions.find((q: any) => q.id === res.question_id);
             return (
               <div key={i} className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm space-y-4">
@@ -892,6 +994,10 @@ export default function App() {
     setUser(u);
     localStorage.setItem('token', t);
     localStorage.setItem('user', JSON.stringify(u));
+    
+    // Role-based redirection logic
+    // By default we go to dashboard, but we could set specific tabs if needed
+    setTab('dashboard');
   };
 
   const logout = () => {
@@ -900,6 +1006,24 @@ export default function App() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
   };
+
+  useEffect(() => {
+    if (user) {
+      const menuItems = [
+        { id: 'dashboard', roles: ['admin', 'teacher', 'student', 'developer'] },
+        { id: 'exams', roles: ['admin', 'teacher', 'student', 'developer'] },
+        { id: 'subjects', roles: ['admin', 'developer'] },
+        { id: 'bulk-uploader', roles: ['admin', 'developer'] },
+        { id: 'results', roles: ['admin', 'teacher', 'student', 'developer'] },
+        { id: 'users', roles: ['admin', 'developer'] },
+        { id: 'analytics', roles: ['admin', 'teacher', 'developer'] },
+      ];
+      const currentItem = menuItems.find(item => item.id === tab);
+      if (currentItem && !currentItem.roles.includes(user.role)) {
+        setTab('dashboard');
+      }
+    }
+  }, [tab, user]);
 
   if (!token) {
     return <LoginPage onAuth={handleAuth} />;
@@ -924,7 +1048,9 @@ export default function App() {
                 >
                   {tab === 'dashboard' && <Dashboard />}
                   {tab === 'exams' && <ExamList onSelectExam={setSelectedExamId} />}
-                  {tab === 'results' && <div className="p-12 text-center text-zinc-500">Results history coming soon...</div>}
+                  {tab === 'subjects' && <SubjectManager />}
+                  {tab === 'bulk-uploader' && <BulkExamUploader />}
+                  {tab === 'results' && <Results />}
                   {tab === 'users' && <div className="p-12 text-center text-zinc-500">User management coming soon...</div>}
                   {tab === 'analytics' && <div className="p-12 text-center text-zinc-500">Advanced analytics coming soon...</div>}
                 </motion.div>
