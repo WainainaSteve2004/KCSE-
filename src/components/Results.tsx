@@ -61,6 +61,7 @@ const Results = () => {
       const res = await fetch('/api/results/student', {
         headers: { 'Authorization': `Bearer ${auth?.token}` }
       });
+      if (!res.ok) throw new Error('Failed to fetch results');
       const data = await res.json();
       if (Array.isArray(data)) {
         setResults(data);
@@ -78,11 +79,16 @@ const Results = () => {
       const res = await fetch(`/api/results/${examId}/details`, {
         headers: { 'Authorization': `Bearer ${auth?.token}` }
       });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to fetch details');
+      }
       const data = await res.json();
       setDetails(data);
       setSelectedResult(examId);
     } catch (error) {
       console.error("Error fetching details:", error);
+      alert(error instanceof Error ? error.message : "Failed to load exam details");
     } finally {
       setDetailsLoading(false);
     }
@@ -90,17 +96,17 @@ const Results = () => {
 
   const filteredResults = results
     .filter(r => 
-      r.exam_title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      r.subject_name.toLowerCase().includes(searchTerm.toLowerCase())
+      (r.exam_title?.toLowerCase() || "").includes(searchTerm.toLowerCase()) || 
+      (r.subject_name?.toLowerCase() || "").includes(searchTerm.toLowerCase())
     )
     .sort((a, b) => {
       if (sortBy === 'date') return new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime();
       if (sortBy === 'score') return b.percentage - a.percentage;
-      if (sortBy === 'subject') return a.subject_name.localeCompare(b.subject_name);
+      if (sortBy === 'subject') return (a.subject_name || "").localeCompare(b.subject_name || "");
       return 0;
     });
 
-  if (selectedResult && details) {
+  if (selectedResult && details && details.summary) {
     return (
       <div className="space-y-8">
         <button 
@@ -262,7 +268,7 @@ const Results = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredResults.map((result, i) => (
             <motion.div
-              key={result.id}
+              key={result.id || i}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}

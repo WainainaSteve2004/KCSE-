@@ -17,7 +17,9 @@ import {
   Upload,
   BrainCircuit,
   Calculator,
-  FlaskConical
+  FlaskConical,
+  Trash2,
+  X
 } from 'lucide-react';
 import BulkExamUploader from './components/BulkExamUploader';
 import SubjectManager from './components/SubjectManager';
@@ -31,7 +33,16 @@ interface User {
   name: string;
   email: string;
   role: Role;
+  education_system?: string;
+  grade?: string;
 }
+
+export const EDUCATION_SYSTEMS = ['KCSE', 'CBE', 'KJSEA'];
+export const GRADES: Record<string, string[]> = {
+  'KCSE': ['Form 1', 'Form 2', 'Form 3', 'Form 4'],
+  'CBE': ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'],
+  'KJSEA': ['Grade 7', 'Grade 8', 'Grade 9']
+};
 
 interface AuthContextType {
   user: User | null;
@@ -114,6 +125,8 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('student');
+  const [educationSystem, setEducationSystem] = useState('');
+  const [grade, setGrade] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -127,7 +140,9 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
     setShowTroubleshoot(false);
     
     const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
-    const body = isRegister ? { name, email, password, role } : { email, password };
+    const body = isRegister 
+      ? { name, email, password, role, education_system: educationSystem, grade } 
+      : { email, password };
 
     try {
       const res = await fetch(endpoint, {
@@ -213,6 +228,44 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
             </div>
           )}
 
+          {isRegister && role === 'student' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">Education System</label>
+                <select 
+                  value={educationSystem} 
+                  onChange={e => {
+                    setEducationSystem(e.target.value);
+                    setGrade('');
+                  }}
+                  required
+                  className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                >
+                  <option value="">Select System</option>
+                  {EDUCATION_SYSTEMS.map(sys => (
+                    <option key={sys} value={sys}>{sys}</option>
+                  ))}
+                </select>
+              </div>
+              {educationSystem && (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-1">Grade</label>
+                  <select 
+                    value={grade} 
+                    onChange={e => setGrade(e.target.value)}
+                    required
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                  >
+                    <option value="">Select Grade</option>
+                    {GRADES[educationSystem].map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </>
+          )}
+
           {success && (
             <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -292,7 +345,13 @@ const Dashboard = () => {
     <div className="space-y-8">
       <header>
         <h1 className="text-3xl font-bold text-zinc-900 capitalize">{auth?.user?.role} Dashboard</h1>
-        <p className="text-zinc-500 mt-1">Welcome back, {auth?.user?.name}. Here's what's happening today.</p>
+        <p className="text-zinc-500 mt-1">
+          Welcome back, {auth?.user?.name}. 
+          {auth?.user?.role === 'student' && auth?.user?.education_system && (
+            <span> You are currently in {auth.user.education_system} - {auth.user.grade}.</span>
+          )}
+          {!auth?.user?.role || auth?.user?.role !== 'student' ? " Here's what's happening today." : ""}
+        </p>
       </header>
 
       {auth?.user?.role !== 'student' && stats && (
@@ -422,29 +481,42 @@ const ExamList = ({ onSelectExam }: { onSelectExam: (id: number) => void }) => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {Array.isArray(exams) && exams.map((exam) => (
+        {Array.isArray(exams) && exams.map((exam, i) => exam && (
           <motion.div 
-            key={exam.id}
+            key={exam.id || i}
             whileHover={{ y: -5 }}
             className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm hover:shadow-md transition-all cursor-pointer group"
             onClick={() => onSelectExam(exam.id)}
           >
             <div className="flex items-center justify-between mb-4">
-              <span className="px-3 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-full uppercase tracking-wider">
-                {exam.subject_name}
-              </span>
+              <div className="flex gap-2">
+                <span className="px-3 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-full uppercase tracking-wider">
+                  {exam.subject_name || "General"}
+                </span>
+                {exam.grade && (
+                  <span className="px-3 py-1 bg-zinc-100 text-zinc-600 text-xs font-bold rounded-full uppercase tracking-wider">
+                    {exam.grade}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-1 text-zinc-400 text-sm">
                 <Clock className="w-4 h-4" />
                 {exam.duration}m
               </div>
             </div>
             <h3 className="text-lg font-bold text-zinc-900 group-hover:text-indigo-600 transition-colors">{exam.title}</h3>
-            <p className="text-zinc-500 text-sm mt-2 line-clamp-2">Test your knowledge in {exam.subject_name}.</p>
+            <p className="text-zinc-500 text-sm mt-2 line-clamp-2">Test your knowledge in {exam.subject_name || "this subject"}.</p>
             <div className="mt-6 flex items-center justify-between">
-              <div className="flex -space-x-2">
+              <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full border-2 border-white bg-zinc-100 flex items-center justify-center text-[10px] font-bold text-zinc-400">
                   ?
                 </div>
+                {exam.original_file_url && (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 px-2 py-1 rounded">
+                    <FileText className="w-3 h-3" />
+                    Doc
+                  </span>
+                )}
               </div>
               <ChevronRight className="w-5 h-5 text-zinc-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
             </div>
@@ -469,6 +541,15 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
   const [title, setTitle] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [duration, setDuration] = useState('120');
+  const [educationSystem, setEducationSystem] = useState(auth?.user?.education_system || '');
+  const [grade, setGrade] = useState(auth?.user?.grade || '');
+
+  useEffect(() => {
+    if (auth?.user?.education_system) setEducationSystem(auth.user.education_system);
+    if (auth?.user?.grade) setGrade(auth.user.grade);
+  }, [auth?.user]);
+
+  const [originalFileUrl, setOriginalFileUrl] = useState<string | null>(null);
   const [questions, setQuestions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -485,8 +566,8 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
   };
 
   const handleSubmit = async () => {
-    if (!title || !subjectId || questions.length === 0) {
-      setError('Please provide a title, subject, and at least one question.');
+    if (!title || !subjectId || questions.length === 0 || !educationSystem || !grade) {
+      setError('Please provide a title, subject, education system, grade, and at least one question.');
       return;
     }
 
@@ -499,7 +580,15 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${auth?.token}`
         },
-        body: JSON.stringify({ title, subject_id: subjectId, duration, questions })
+        body: JSON.stringify({ 
+          title, 
+          subject_id: subjectId, 
+          duration, 
+          questions,
+          education_system: educationSystem,
+          grade,
+          original_file_url: originalFileUrl
+        })
       });
       if (res.ok) {
         onCreated();
@@ -536,12 +625,76 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
               <label className="block text-sm font-medium text-zinc-700 mb-1">Subject</label>
               <select value={subjectId} onChange={e => setSubjectId(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none bg-white">
                 <option value="">Select Subject</option>
-                {Array.isArray(subjects) && subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {Array.isArray(subjects) && subjects.map((s, i) => <option key={s.id || i} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-zinc-700 mb-1">Duration (mins)</label>
               <input type="number" value={duration} onChange={e => setDuration(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 mb-1">Education System</label>
+              <select 
+                value={educationSystem} 
+                onChange={e => {
+                  setEducationSystem(e.target.value);
+                  setGrade('');
+                }}
+                className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none bg-white"
+              >
+                <option value="">Select System</option>
+                {EDUCATION_SYSTEMS.map(sys => <option key={sys} value={sys}>{sys}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 mb-1">Grade</label>
+              <select 
+                value={grade} 
+                onChange={e => setGrade(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none bg-white"
+                disabled={!educationSystem}
+              >
+                <option value="">Select Grade</option>
+                {educationSystem && GRADES[educationSystem].map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="p-6 bg-zinc-50 rounded-3xl border border-zinc-200">
+            <h3 className="text-sm font-bold text-zinc-700 uppercase mb-4">Original Document (Optional)</h3>
+            <div className="flex items-center gap-4">
+              {originalFileUrl ? (
+                <div className="flex-1 flex items-center justify-between bg-white p-4 rounded-2xl border border-zinc-200">
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-6 h-6 text-indigo-600" />
+                    <span className="text-sm font-medium text-zinc-900">Document Attached</span>
+                  </div>
+                  <button onClick={() => setOriginalFileUrl(null)} className="text-red-500 hover:text-red-600">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex-1 cursor-pointer">
+                  <div className="p-8 border-2 border-dashed border-zinc-200 rounded-2xl flex flex-col items-center justify-center hover:border-indigo-400 hover:bg-indigo-50 transition-all group">
+                    <Upload className="w-8 h-8 text-zinc-300 group-hover:text-indigo-500 mb-2" />
+                    <span className="text-sm text-zinc-500 group-hover:text-indigo-600 font-medium">Click to upload original PDF/Image</span>
+                    <span className="text-xs text-zinc-400 mt-1">This will be visible to students for reference</span>
+                  </div>
+                  <input 
+                    type="file" 
+                    accept=".pdf,.png,.jpg,.jpeg,.docx" 
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = () => setOriginalFileUrl(reader.result as string);
+                        reader.readAsDataURL(file);
+                      }
+                    }} 
+                    className="hidden" 
+                  />
+                </label>
+              )}
             </div>
           </div>
 
@@ -554,7 +707,7 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
             </div>
 
             {questions.map((q, i) => (
-              <div key={i} className="p-6 bg-zinc-50 rounded-2xl space-y-4 border border-zinc-200">
+              <div key={q.id || i} className="p-6 bg-zinc-50 rounded-2xl space-y-4 border border-zinc-200">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="md:col-span-2">
                     <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">Question Text</label>
@@ -567,6 +720,45 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
                       }}
                       className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none h-24" 
                     />
+                    <div className="mt-2">
+                      <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">Question Image (Optional)</label>
+                      <div className="flex items-center gap-4">
+                        {q.image_url && (
+                          <img src={q.image_url} alt="Question" className="w-16 h-16 object-cover rounded-lg border border-zinc-200" referrerPolicy="no-referrer" />
+                        )}
+                        <label className="flex-1 cursor-pointer">
+                          <div className="px-4 py-2 border-2 border-dashed border-zinc-200 rounded-lg text-center text-xs text-zinc-500 hover:border-indigo-400 hover:bg-indigo-50 transition-all">
+                            {q.image_url ? 'Change Image' : 'Upload Image'}
+                          </div>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  const newQ = [...questions];
+                                  newQ[i].image_url = reader.result as string;
+                                  setQuestions(newQ);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }} 
+                            className="hidden" 
+                          />
+                        </label>
+                        {q.image_url && (
+                          <button onClick={() => {
+                            const newQ = [...questions];
+                            newQ[i].image_url = undefined;
+                            setQuestions(newQ);
+                          }} className="text-red-500 hover:text-red-600">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <div className="space-y-4">
                     <div>
@@ -803,7 +995,7 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
           {results?.results?.map((res: any, i: number) => {
             const q = exam.questions.find((q: any) => q.id === res.question_id);
             return (
-              <div key={i} className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm space-y-4">
+              <div key={res.question_id} className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-zinc-400 uppercase">Question {i + 1}</span>
                   <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-full">
@@ -852,6 +1044,28 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
         </div>
       </div>
 
+      {exam.original_file_url && (
+        <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-indigo-900">Original Exam Document Available</p>
+              <p className="text-xs text-indigo-600">You can view the original uploaded file for reference.</p>
+            </div>
+          </div>
+          <a 
+            href={exam.original_file_url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-white text-indigo-600 rounded-xl text-sm font-bold border border-indigo-200 hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
+          >
+            View Original File
+          </a>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
           <motion.div 
@@ -870,6 +1084,17 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
             <h2 className="text-2xl font-bold text-zinc-900 leading-tight mb-8">
               {currentQuestion.question_text}
             </h2>
+
+            {currentQuestion.image_url && (
+              <div className="mb-8 p-4 bg-zinc-50 rounded-3xl border border-zinc-100 flex justify-center">
+                <img 
+                  src={currentQuestion.image_url} 
+                  alt="Question Illustration" 
+                  className="max-w-full h-auto max-h-96 rounded-2xl shadow-sm" 
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            )}
 
             <div className="mt-auto space-y-6">
               {currentQuestion.type === 'practical' && (
@@ -936,9 +1161,9 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
           <div className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm">
             <h3 className="text-lg font-bold text-zinc-900 mb-6">Question Navigator</h3>
             <div className="grid grid-cols-5 gap-3">
-              {exam.questions.map((_: any, i: number) => (
+              {exam.questions.map((q: any, i: number) => (
                 <button
-                  key={i}
+                  key={q.id || i}
                   onClick={() => setCurrentQuestionIndex(i)}
                   className={`w-10 h-10 rounded-xl font-bold text-sm flex items-center justify-center transition-all ${
                     currentQuestionIndex === i 

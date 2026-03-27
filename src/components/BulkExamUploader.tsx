@@ -16,11 +16,14 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
-import { AuthContext } from '../App';
+import mammoth from 'mammoth';
+import { GoogleGenAI, Type } from "@google/genai";
+import { AuthContext, EDUCATION_SYSTEMS, GRADES } from '../App';
 
 interface Question {
   id?: string;
   question_text: string;
+  image_url?: string;
   type: 'theory' | 'math' | 'practical';
   marks: number;
   correct_answer: string;
@@ -33,7 +36,15 @@ const BulkExamUploader = () => {
   const [selectedSubject, setSelectedSubject] = useState('');
   const [examTitle, setExamTitle] = useState('');
   const [duration, setDuration] = useState('120');
+  const [educationSystem, setEducationSystem] = useState(auth?.user?.education_system || '');
+  const [grade, setGrade] = useState(auth?.user?.grade || '');
   const [questions, setQuestions] = useState<Question[]>([]);
+
+  useEffect(() => {
+    if (auth?.user?.education_system) setEducationSystem(auth.user.education_system);
+    if (auth?.user?.grade) setGrade(auth.user.grade);
+  }, [auth?.user]);
+  const [originalFileUrl, setOriginalFileUrl] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -57,6 +68,13 @@ const BulkExamUploader = () => {
 
     const reader = new FileReader();
     const extension = file.name.split('.').pop()?.toLowerCase();
+
+    // Store original file as base64 for now (or upload to storage if available)
+    const readerForOriginal = new FileReader();
+    readerForOriginal.onload = () => {
+      setOriginalFileUrl(readerForOriginal.result as string);
+    };
+    readerForOriginal.readAsDataURL(file);
 
     if (extension === 'csv') {
       Papa.parse(file, {
@@ -85,8 +103,82 @@ const BulkExamUploader = () => {
         }
       };
       reader.readAsBinaryString(file);
+    } else if (['pdf', 'png', 'jpg', 'jpeg', 'docx'].includes(extension || '')) {
+      handleAIParsing(file, extension || '');
     } else {
-      setError('Unsupported file format. Please upload CSV or Excel.');
+      setError('Unsupported file format. Please upload CSV, Excel, PDF, DOCX, or Image (PNG/JPG).');
+      setIsParsing(false);
+    }
+  };
+
+  const handleAIParsing = async (file: File, extension: string) => {
+    setIsParsing(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      let contentPart: any;
+
+      if (extension === 'docx') {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        contentPart = { text: `Extract questions from the following text: \n\n ${result.value}` };
+      } else {
+        const base64Data = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64 = (reader.result as string).split(',')[1];
+            resolve(base64);
+          };
+          reader.readAsDataURL(file);
+        });
+
+        let mimeType = '';
+        if (extension === 'pdf') mimeType = 'application/pdf';
+        else if (['png', 'jpg', 'jpeg'].includes(extension)) mimeType = `image/${extension === 'jpg' ? 'jpeg' : extension}`;
+
+        contentPart = {
+          inlineData: {
+            mimeType,
+            data: base64Data
+          }
+        };
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [
+          {
+            parts: [
+              { text: "Extract questions from this file. Return a JSON array of questions. Each question must have: question_text (string), type (one of: theory, math, practical), marks (number), correct_answer (string), and marking_scheme (string). Ensure the output is valid JSON." },
+              contentPart
+            ]
+          }
+        ],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                question_text: { type: Type.STRING },
+                type: { type: Type.STRING, enum: ['theory', 'math', 'practical'] },
+                marks: { type: Type.NUMBER },
+                correct_answer: { type: Type.STRING },
+                marking_scheme: { type: Type.STRING }
+              },
+              required: ['question_text', 'type', 'marks']
+            }
+          }
+        }
+      });
+
+      const parsedData = JSON.parse(response.text || '[]');
+      processParsedData(parsedData);
+    } catch (err: any) {
+      setError(`AI Parsing Error: ${err.message}`);
       setIsParsing(false);
     }
   };
@@ -157,8 +249,8 @@ const BulkExamUploader = () => {
   };
 
   const handleSubmit = async () => {
-    if (!selectedSubject || !examTitle || questions.length === 0) {
-      setError('Please provide subject, title, and at least one question.');
+    if (!selectedSubject || !examTitle || questions.length === 0 || !educationSystem || !grade) {
+      setError('Please provide subject, title, education system, grade, and at least one question.');
       return;
     }
 
@@ -174,6 +266,9 @@ const BulkExamUploader = () => {
           subject_id: selectedSubject,
           title: examTitle,
           duration: parseInt(duration),
+          education_system: educationSystem,
+          grade: grade,
+          original_file_url: originalFileUrl,
           questions
         })
       });
@@ -183,6 +278,8 @@ const BulkExamUploader = () => {
         setQuestions([]);
         setExamTitle('');
         setSelectedSubject('');
+        setEducationSystem('');
+        setGrade('');
       } else {
         const data = await res.json();
         setError(data.error || 'Failed to upload exam.');
@@ -203,6 +300,19 @@ const BulkExamUploader = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template");
     XLSX.writeFile(wb, "exam_template.xlsx");
+  };
+
+  const handleQuestionImageUpload = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const updated = [...questions];
+      updated[index].image_url = reader.result as string;
+      setQuestions(updated);
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -239,7 +349,7 @@ const BulkExamUploader = () => {
                   className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                 >
                   <option value="">Select Subject</option>
-                  {Array.isArray(subjects) && subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {Array.isArray(subjects) && subjects.map((s, i) => <option key={s.id || i} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
 
@@ -262,16 +372,56 @@ const BulkExamUploader = () => {
                   className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">Education System</label>
+                <select 
+                  value={educationSystem} 
+                  onChange={e => {
+                    setEducationSystem(e.target.value);
+                    setGrade('');
+                  }}
+                  className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                >
+                  <option value="">Select System</option>
+                  {EDUCATION_SYSTEMS.map(sys => <option key={sys} value={sys}>{sys}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">Grade</label>
+                <select 
+                  value={grade} 
+                  onChange={e => setGrade(e.target.value)}
+                  disabled={!educationSystem}
+                  className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-indigo-500 bg-white disabled:opacity-50"
+                >
+                  <option value="">Select Grade</option>
+                  {educationSystem && GRADES[educationSystem].map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
             </div>
+
+            {originalFileUrl && (
+              <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <FileText className="w-6 h-6 text-indigo-600" />
+                  <span className="text-sm font-bold text-indigo-900 uppercase tracking-wider">Original Document Attached</span>
+                </div>
+                <button onClick={() => setOriginalFileUrl(null)} className="text-red-500 hover:text-red-600">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             <div className="pt-4 border-t border-zinc-100">
               <label className="block w-full cursor-pointer">
                 <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-zinc-200 rounded-2xl hover:border-indigo-400 hover:bg-indigo-50/30 transition-all group">
                   <Upload className="w-10 h-10 text-zinc-300 group-hover:text-indigo-500 mb-4 transition-colors" />
                   <span className="text-sm font-bold text-zinc-600 group-hover:text-indigo-600">Click to upload file</span>
-                  <span className="text-xs text-zinc-400 mt-1">CSV or Excel files only</span>
+                  <span className="text-xs text-zinc-400 mt-1">CSV, Excel, PDF, DOCX, or Images</span>
                 </div>
-                <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileUpload} className="hidden" />
+                <input type="file" accept=".csv,.xlsx,.xls,.pdf,.docx,.png,.jpg,.jpeg" onChange={handleFileUpload} className="hidden" />
               </label>
             </div>
 
@@ -342,7 +492,7 @@ const BulkExamUploader = () => {
                 </div>
               ) : (
                 questions.map((q, index) => (
-                  <div key={index} className="p-6 hover:bg-zinc-50/50 transition-colors group">
+                  <div key={q.id || index} className="p-6 hover:bg-zinc-50/50 transition-colors group">
                     {editingIndex === index ? (
                       <div className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
@@ -375,6 +525,37 @@ const BulkExamUploader = () => {
                             onChange={e => setEditData({ ...editData!, question_text: e.target.value })}
                             className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm outline-none focus:ring-2 focus:ring-indigo-500 min-h-[80px]"
                           />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Question Image (Optional)</label>
+                          <div className="flex items-center gap-4">
+                            {editData?.image_url && (
+                              <img src={editData.image_url} alt="Question" className="w-16 h-16 object-cover rounded-lg border border-zinc-200" referrerPolicy="no-referrer" />
+                            )}
+                            <label className="flex-1 cursor-pointer">
+                              <div className="px-4 py-2 border-2 border-dashed border-zinc-200 rounded-lg text-center text-xs text-zinc-500 hover:border-indigo-400 hover:bg-indigo-50 transition-all">
+                                {editData?.image_url ? 'Change Image' : 'Upload Image'}
+                              </div>
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                onChange={e => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const reader = new FileReader();
+                                    reader.onload = () => setEditData({ ...editData!, image_url: reader.result as string });
+                                    reader.readAsDataURL(file);
+                                  }
+                                }} 
+                                className="hidden" 
+                              />
+                            </label>
+                            {editData?.image_url && (
+                              <button onClick={() => setEditData({ ...editData!, image_url: undefined })} className="text-red-500 hover:text-red-600">
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
@@ -414,6 +595,11 @@ const BulkExamUploader = () => {
                             </span>
                           </div>
                           <p className="text-zinc-900 font-medium leading-relaxed">{q.question_text}</p>
+                          {q.image_url && (
+                            <div className="mt-2">
+                              <img src={q.image_url} alt="Question" className="max-w-full h-auto max-h-48 rounded-xl border border-zinc-100" referrerPolicy="no-referrer" />
+                            </div>
+                          )}
                           <div className="flex items-center gap-4 text-xs">
                             <span className="text-zinc-400"><span className="font-bold text-zinc-500">Ans:</span> {q.correct_answer || 'N/A'}</span>
                             <span className="text-zinc-400"><span className="font-bold text-zinc-500">Scheme:</span> {q.marking_scheme || 'N/A'}</span>

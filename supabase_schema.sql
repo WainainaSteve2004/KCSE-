@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   role TEXT CHECK(role IN ('admin', 'teacher', 'student', 'developer')) NOT NULL,
+  education_system TEXT, -- KCSE, CBE, KJSEA
+  grade TEXT, -- Form 1, Grade 1, etc.
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -73,6 +75,9 @@ CREATE TABLE IF NOT EXISTS exams (
   subject_id BIGINT REFERENCES subjects(id),
   title TEXT NOT NULL,
   duration INTEGER NOT NULL, -- in minutes
+  education_system TEXT,
+  grade TEXT,
+  original_file_url TEXT,
   created_by UUID REFERENCES users(id),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -82,6 +87,7 @@ CREATE TABLE IF NOT EXISTS questions (
   id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
   exam_id BIGINT REFERENCES exams(id) ON DELETE CASCADE,
   question_text TEXT NOT NULL,
+  image_url TEXT,
   type TEXT CHECK(type IN ('theory', 'math', 'practical')) NOT NULL,
   marks INTEGER NOT NULL,
   correct_answer TEXT,

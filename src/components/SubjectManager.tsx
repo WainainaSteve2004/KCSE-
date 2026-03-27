@@ -304,8 +304,8 @@ const SubjectManager = () => {
                   <td colSpan={4} className="px-6 py-12 text-center text-zinc-400">No subjects found.</td>
                 </tr>
               ) : (
-                filteredSubjects.map((subject) => (
-                  <tr key={subject.id} className="hover:bg-zinc-50/50 transition-colors group">
+                filteredSubjects.map((subject, i) => (
+                  <tr key={subject.id || i} className="hover:bg-zinc-50/50 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center font-bold">

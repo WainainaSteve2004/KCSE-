@@ -23,13 +23,13 @@ export const authenticateToken = (req: any, res: any, next: any) => {
 
 // Auth
 router.post("/auth/register", async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, education_system, grade } = req.body;
   try {
     const hashedPassword = bcrypt.hashSync(password, 10);
     
     const { data: user, error } = await supabase
       .from('users')
-      .insert([{ name, email, password: hashedPassword, role }])
+      .insert([{ name, email, password: hashedPassword, role, education_system, grade }])
       .select()
       .single();
 
@@ -59,8 +59,22 @@ router.post("/auth/login", async (req, res) => {
       .single();
 
     if (user && bcrypt.compareSync(password, user.password)) {
-      const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET);
-      res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+      const token = jwt.sign({ 
+        id: user.id, 
+        email: user.email, 
+        role: user.role, 
+        name: user.name,
+        education_system: user.education_system,
+        grade: user.grade
+      }, JWT_SECRET);
+      res.json({ token, user: { 
+        id: user.id, 
+        name: user.name, 
+        email: user.email, 
+        role: user.role,
+        education_system: user.education_system,
+        grade: user.grade
+      } });
     } else {
       res.status(401).json({ error: "Invalid credentials" });
     }
@@ -136,19 +150,29 @@ router.delete("/subjects/:id", authenticateToken, async (req, res) => {
 
 // Exams
 router.get("/exams", authenticateToken, async (req, res) => {
-  const { data: exams, error } = await supabase
+  const user = (req as any).user;
+  let query = supabase
     .from('exams')
     .select(`
       *,
       subjects (name)
     `);
   
+  // Filter for students
+  if (user.role === 'student' && user.education_system && user.grade) {
+    query = query
+      .eq('education_system', user.education_system)
+      .eq('grade', user.grade);
+  }
+
+  const { data: exams, error } = await query;
+  
   if (error) return res.status(500).json({ error: error.message });
   
   // Flatten subject name
-  const formattedExams = exams.map((e: any) => ({
+  const formattedExams = (exams || []).map((e: any) => ({
     ...e,
-    subject_name: e.subjects?.name
+    subject_name: e.subjects?.name || "Unknown Subject"
   }));
   
   res.json(formattedExams);
@@ -174,12 +198,20 @@ router.get("/exams/:id", authenticateToken, async (req, res) => {
 router.post("/exams", authenticateToken, async (req, res) => {
   const role = (req as any).user.role;
   if (role !== 'admin' && role !== 'developer' && role !== 'teacher') return res.sendStatus(403);
-  const { subject_id, title, duration, questions } = req.body;
+  const { subject_id, title, duration, questions, education_system, grade, original_file_url } = req.body;
   
   try {
     const { data: exam, error: examError } = await supabase
       .from('exams')
-      .insert([{ subject_id, title, duration, created_by: (req as any).user.id }])
+      .insert([{ 
+        subject_id, 
+        title, 
+        duration, 
+        education_system, 
+        grade, 
+        original_file_url,
+        created_by: (req as any).user.id 
+      }])
       .select()
       .single();
 
@@ -188,6 +220,7 @@ router.post("/exams", authenticateToken, async (req, res) => {
     const questionsToInsert = questions.map((q: any) => ({
       exam_id: exam.id,
       question_text: q.question_text,
+      image_url: q.image_url,
       type: q.type,
       marks: q.marks,
       correct_answer: q.correct_answer,
@@ -246,8 +279,10 @@ router.get("/results/student", authenticateToken, async (req, res) => {
     .from('results')
     .select(`
       *,
-      exams (title),
-      subjects:exams(subjects(name))
+      exams (
+        title,
+        subjects (name)
+      )
     `)
     .eq('student_id', (req as any).user.id)
     .order('submitted_at', { ascending: false });
@@ -256,8 +291,8 @@ router.get("/results/student", authenticateToken, async (req, res) => {
   
   const formattedResults = (results || []).map((r: any) => ({
     ...r,
-    exam_title: r.exams?.title,
-    subject_name: r.exams?.subjects?.name
+    exam_title: r.exams?.title || "Unknown Exam",
+    subject_name: r.exams?.subjects?.name || "Unknown Subject"
   }));
 
   res.json(formattedResults);
@@ -271,18 +306,20 @@ router.get("/results/teacher", authenticateToken, async (req, res) => {
     .select(`
       *,
       users (name),
-      exams (title),
-      subjects:exams(subjects(name))
+      exams (
+        title,
+        subjects (name)
+      )
     `)
     .order('submitted_at', { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
 
-  const formattedResults = results.map((r: any) => ({
+  const formattedResults = (results || []).map((r: any) => ({
     ...r,
-    student_name: r.users?.name,
-    exam_title: r.exams?.title,
-    subject_name: r.exams?.subjects?.name
+    student_name: r.users?.name || "Unknown Student",
+    exam_title: r.exams?.title || "Unknown Exam",
+    subject_name: r.exams?.subjects?.name || "Unknown Subject"
   }));
 
   res.json(formattedResults);
@@ -293,21 +330,26 @@ router.get("/results/:examId/details", authenticateToken, async (req, res) => {
   const student_id = (req as any).user.id;
 
   try {
-    // Get the result summary
-    const { data: result, error: resultError } = await supabase
+    // Get the result summary - take the latest one if multiple exist for this exam/student
+    const { data: results, error: resultError } = await supabase
       .from('results')
       .select(`
         *,
-        exams (title),
-        subjects:exams(subjects(name))
+        exams (
+          title,
+          subjects (name)
+        )
       `)
       .eq('exam_id', examId)
       .eq('student_id', student_id)
-      .single();
+      .order('submitted_at', { ascending: false })
+      .limit(1);
 
     if (resultError) throw resultError;
+    const result = results?.[0];
+    if (!result) return res.status(404).json({ error: "Result not found" });
 
-    // Get the detailed answers
+    // Get the detailed answers - order by latest first
     const { data: answers, error: answersError } = await supabase
       .from('student_answers')
       .select(`
@@ -315,27 +357,43 @@ router.get("/results/:examId/details", authenticateToken, async (req, res) => {
         questions (question_text, correct_answer, marks, type)
       `)
       .eq('exam_id', examId)
-      .eq('student_id', student_id);
+      .eq('student_id', student_id)
+      .order('created_at', { ascending: false });
 
     if (answersError) throw answersError;
+
+    // Filter to keep only the latest answer for each question_id to handle multiple attempts
+    const uniqueAnswers: any[] = [];
+    const seenQuestions = new Set();
+    if (answers) {
+      for (const ans of answers) {
+        if (!seenQuestions.has(ans.question_id)) {
+          uniqueAnswers.push({
+            ...ans,
+            question_text: ans.questions?.question_text || "Unknown Question",
+            correct_answer: ans.questions?.correct_answer || "",
+            marks: ans.questions?.marks || 0,
+            type: ans.questions?.type || "theory"
+          });
+          seenQuestions.add(ans.question_id);
+        }
+      }
+    }
 
     res.json({
       summary: {
         ...result,
-        exam_title: result.exams?.title,
-        subject_name: result.exams?.subjects?.name
+        exam_title: result.exams?.title || "Unknown Exam",
+        subject_name: result.exams?.subjects?.name || "Unknown Subject"
       },
-      answers: answers.map((a: any) => ({
-        ...a,
-        question_text: a.questions?.question_text,
-        correct_answer: a.questions?.correct_answer,
-        marks: a.questions?.marks,
-        type: a.questions?.type
-      }))
+      answers: uniqueAnswers
     });
   } catch (error: any) {
     console.error("Error fetching result details:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      error: error.message || "Internal server error",
+      details: typeof error === 'object' ? JSON.stringify(error) : String(error)
+    });
   }
 });
 
