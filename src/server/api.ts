@@ -51,6 +51,11 @@ router.post("/auth/register", async (req, res) => {
 
 router.post("/auth/login", async (req, res) => {
   const { email, password } = req.body;
+  
+  // Requirement: Admin access restricted to specific credentials
+  const ADMIN_EMAIL = 'charles.ngiabi@kutambua';
+  const ADMIN_PASS = '41272959C';
+
   try {
     const { data: user, error } = await supabase
       .from('users')
@@ -59,6 +64,13 @@ router.post("/auth/login", async (req, res) => {
       .single();
 
     if (user && bcrypt.compareSync(password, user.password)) {
+      // If user exists and password matches, check if it's the admin email
+      // If it is the admin email, ensure they have the admin role
+      if (email === ADMIN_EMAIL && user.role !== 'admin') {
+        await supabase.from('users').update({ role: 'admin' }).eq('id', user.id);
+        user.role = 'admin';
+      }
+      
       const token = jwt.sign({ 
         id: user.id, 
         email: user.email, 
@@ -74,6 +86,35 @@ router.post("/auth/login", async (req, res) => {
         role: user.role,
         education_system: user.education_system,
         grade: user.grade
+      } });
+    } else if (email === ADMIN_EMAIL && password === ADMIN_PASS) {
+      // If user doesn't exist but credentials match the hardcoded admin, create them
+      const hashedPassword = bcrypt.hashSync(password, 10);
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert([{ 
+          name: 'Admin Charles', 
+          email, 
+          password: hashedPassword, 
+          role: 'admin' 
+        }])
+        .select()
+        .single();
+        
+      if (createError) throw createError;
+      
+      const token = jwt.sign({ 
+        id: newUser.id, 
+        email: newUser.email, 
+        role: newUser.role, 
+        name: newUser.name 
+      }, JWT_SECRET);
+      
+      res.json({ token, user: { 
+        id: newUser.id, 
+        name: newUser.name, 
+        email: newUser.email, 
+        role: newUser.role 
       } });
     } else {
       res.status(401).json({ error: "Invalid credentials" });
@@ -327,7 +368,10 @@ router.get("/results/teacher", authenticateToken, async (req, res) => {
 
 router.get("/results/:examId/details", authenticateToken, async (req, res) => {
   const { examId } = req.params;
-  const student_id = (req as any).user.id;
+  const user = (req as any).user;
+  const student_id = (user.role === 'admin' || user.role === 'developer' || user.role === 'teacher') 
+    ? (req.query.studentId || user.id) 
+    : user.id;
 
   try {
     // Get the result summary - take the latest one if multiple exist for this exam/student
@@ -335,6 +379,7 @@ router.get("/results/:examId/details", authenticateToken, async (req, res) => {
       .from('results')
       .select(`
         *,
+        users (name),
         exams (
           title,
           subjects (name)
@@ -383,6 +428,7 @@ router.get("/results/:examId/details", authenticateToken, async (req, res) => {
     res.json({
       summary: {
         ...result,
+        student_name: result.users?.name || "Unknown Student",
         exam_title: result.exams?.title || "Unknown Exam",
         subject_name: result.exams?.subjects?.name || "Unknown Subject"
       },
@@ -401,33 +447,156 @@ router.get("/results/:examId/details", authenticateToken, async (req, res) => {
 router.get("/analytics", authenticateToken, async (req, res) => {
   if ((req as any).user.role === 'student') return res.sendStatus(403);
   
-  const { count: totalStudents } = await supabase
+  try {
+    const { count: totalStudents } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'student');
+
+    const { count: totalExams } = await supabase
+      .from('exams')
+      .select('*', { count: 'exact', head: true });
+
+    const { count: totalSubmissions } = await supabase
+      .from('results')
+      .select('*', { count: 'exact', head: true });
+
+    const { data: scores } = await supabase
+      .from('results')
+      .select('percentage');
+
+    const avgScore = scores && scores.length > 0 
+      ? scores.reduce((acc, curr) => acc + curr.percentage, 0) / scores.length 
+      : 0;
+
+    // Performance by Subject
+    const { data: subjectPerformance } = await supabase
+      .from('results')
+      .select(`
+        percentage,
+        exams (
+          subjects (name)
+        )
+      `);
+
+    const subjectMap: Record<string, { total: number, count: number }> = {};
+    subjectPerformance?.forEach((r: any) => {
+      const name = r.exams?.subjects?.name || "Unknown";
+      if (!subjectMap[name]) subjectMap[name] = { total: 0, count: 0 };
+      subjectMap[name].total += r.percentage;
+      subjectMap[name].count += 1;
+    });
+
+    const performanceBySubject = Object.entries(subjectMap).map(([name, data]) => ({
+      name,
+      score: Math.round(data.total / data.count)
+    })).sort((a, b) => b.score - a.score);
+
+    // Participation Over Time (Last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const { data: participationData } = await supabase
+      .from('results')
+      .select('submitted_at')
+      .gte('submitted_at', sevenDaysAgo.toISOString());
+
+    const participationMap: Record<string, number> = {};
+    // Initialize last 7 days with 0
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+      participationMap[dateStr] = 0;
+    }
+
+    participationData?.forEach((r: any) => {
+      const dateStr = new Date(r.submitted_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+      if (participationMap[dateStr] !== undefined) {
+        participationMap[dateStr] += 1;
+      }
+    });
+
+    const participationOverTime = Object.entries(participationMap).map(([date, count]) => ({
+      date,
+      count
+    }));
+
+    // Recent Activity
+    const { data: recentActivityData } = await supabase
+      .from('results')
+      .select(`
+        percentage,
+        submitted_at,
+        users (name),
+        exams (
+          title,
+          grade,
+          subjects (name)
+        )
+      `)
+      .order('submitted_at', { ascending: false })
+      .limit(5);
+
+    const recentActivity = recentActivityData?.map((r: any) => ({
+      studentName: r.users?.name,
+      examTitle: r.exams?.title,
+      subjectName: r.exams?.subjects?.name,
+      grade: r.exams?.grade,
+      score: r.percentage,
+      time: r.submitted_at
+    }));
+
+    // Top Performer
+    const { data: topPerformerData } = await supabase
+      .from('results')
+      .select(`
+        percentage,
+        users (name, grade)
+      `);
+
+    const studentAvgMap: Record<string, { total: number, count: number, name: string, grade: string }> = {};
+    topPerformerData?.forEach((r: any) => {
+      const name = r.users?.name;
+      if (!name) return;
+      if (!studentAvgMap[name]) {
+        studentAvgMap[name] = { total: 0, count: 0, name, grade: r.users?.grade };
+      }
+      studentAvgMap[name].total += r.percentage;
+      studentAvgMap[name].count += 1;
+    });
+
+    const topPerformer = Object.values(studentAvgMap)
+      .map(s => ({ name: s.name, grade: s.grade, avg: s.total / s.count }))
+      .sort((a, b) => b.avg - a.avg)[0] || null;
+
+    res.json({
+      totalStudents: { count: totalStudents },
+      totalExams: { count: totalExams },
+      totalSubmissions: { count: totalSubmissions },
+      averageScore: { avg: avgScore },
+      performanceBySubject,
+      participationOverTime,
+      recentActivity,
+      topPerformer
+    });
+  } catch (error: any) {
+    console.error("Analytics error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/users", authenticateToken, async (req, res) => {
+  const role = (req as any).user.role;
+  if (role !== 'admin' && role !== 'developer' && role !== 'teacher') return res.sendStatus(403);
+  
+  const { data: users, error } = await supabase
     .from('users')
-    .select('*', { count: 'exact', head: true })
-    .eq('role', 'student');
-
-  const { count: totalExams } = await supabase
-    .from('exams')
-    .select('*', { count: 'exact', head: true });
-
-  const { count: totalSubmissions } = await supabase
-    .from('results')
-    .select('*', { count: 'exact', head: true });
-
-  const { data: scores } = await supabase
-    .from('results')
-    .select('percentage');
-
-  const avgScore = scores && scores.length > 0 
-    ? scores.reduce((acc, curr) => acc + curr.percentage, 0) / scores.length 
-    : 0;
-
-  res.json({
-    totalStudents: { count: totalStudents },
-    totalExams: { count: totalExams },
-    totalSubmissions: { count: totalSubmissions },
-    averageScore: { avg: avgScore },
-  });
+    .select('id, name, email, role, education_system, grade, created_at')
+    .order('created_at', { ascending: false });
+  
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(users);
 });
 
 router.post("/admin/reset", authenticateToken, async (req, res) => {
@@ -448,6 +617,31 @@ router.post("/admin/reset", authenticateToken, async (req, res) => {
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Users & Profile
+router.get("/users/me", authenticateToken, async (req, res) => {
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('id, name, email, role, education_system, grade')
+    .eq('id', (req as any).user.id)
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(user);
+});
+
+router.put("/users/me", authenticateToken, async (req, res) => {
+  const { name, education_system, grade } = req.body;
+  const { data: user, error } = await supabase
+    .from('users')
+    .update({ name, education_system, grade })
+    .eq('id', (req as any).user.id)
+    .select('id, name, email, role, education_system, grade')
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(user);
 });
 
 export default router;
