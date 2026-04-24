@@ -2,7 +2,26 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// Utility to handle retries for AI calls
+async function callAIWithRetry(params: any, retries = 3, delay = 2000): Promise<any> {
+  try {
+    return await ai.models.generateContent(params);
+  } catch (err: any) {
+    const isRateLimit = err.message?.includes('429') || 
+                        err.message?.includes('quota') || 
+                        err.message?.toLowerCase().includes('rate limit');
+    
+    if (retries > 0 && isRateLimit) {
+      console.log(`Rate limit hit, retrying in ${delay}ms... (${retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return callAIWithRetry(params, retries - 1, delay * 2);
+    }
+    throw err;
+  }
+}
+
 export async function markTheoryAnswer(question: string, markingScheme: string, studentAnswer: string, maxMarks: number) {
+  // Use Flash for better rate limits and speed, it's very capable for marking
   const model = "gemini-3-flash-preview";
   const prompt = `
     You are an expert Examina AI examiner performing a thorough and intelligent evaluation.
@@ -25,8 +44,8 @@ export async function markTheoryAnswer(question: string, markingScheme: string, 
        - State the correct answer for the student's reference.
   `;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
+  const response = await callAIWithRetry({
+    model,
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -44,7 +63,6 @@ export async function markTheoryAnswer(question: string, markingScheme: string, 
 
   try {
     const text = response.text || "{}";
-    // Clean up in case there are markdown code blocks
     const cleanJson = text.replace(/```json\n?|\n?```/g, "").trim();
     return JSON.parse(cleanJson);
   } catch (err) {
@@ -54,7 +72,7 @@ export async function markTheoryAnswer(question: string, markingScheme: string, 
 }
 
 export async function markMathAnswer(question: string, markingScheme: string, studentAnswer: string, maxMarks: number) {
-  const model = "gemini-3.1-pro-preview";
+  const model = "gemini-3-flash-preview";
   const prompt = `
     You are an expert Mathematics teacher performing an intelligent evaluation.
     
@@ -75,7 +93,7 @@ export async function markMathAnswer(question: string, markingScheme: string, st
        - Provide a score out of ${maxMarks} (partial credit encouraged).
   `;
 
-  const response = await ai.models.generateContent({
+  const response = await callAIWithRetry({
     model,
     contents: prompt,
     config: {
@@ -103,7 +121,7 @@ export async function markMathAnswer(question: string, markingScheme: string, st
 }
 
 export async function analyzePracticalImage(question: string, base64Image: string | null, studentExplanation: string, maxMarks: number, imageUrl: string | null = null) {
-  const model = "gemini-3.1-pro-preview";
+  const model = "gemini-3.1-pro-preview"; // Vision tasks benefit more from Pro, but let's add fallback/retry
   const prompt = `
     Analyze this image of a science experiment/practical setup as an expert lab instructor.
     
@@ -124,7 +142,6 @@ export async function analyzePracticalImage(question: string, base64Image: strin
 
   let imagePart;
   if (imageUrl) {
-    // Fetch image from URL and convert to base64
     const response = await fetch(imageUrl);
     const buffer = await response.arrayBuffer();
     const base64 = Buffer.from(buffer).toString('base64');
@@ -145,7 +162,7 @@ export async function analyzePracticalImage(question: string, base64Image: strin
     throw new Error("No image provided for practical question");
   }
 
-  const responseJson = await ai.models.generateContent({
+  const responseJson = await callAIWithRetry({
     model,
     contents: {
       parts: [
@@ -178,7 +195,10 @@ export async function analyzePracticalImage(question: string, base64Image: strin
 }
 
 export async function generateExternalExam(subject: string, grade: string, paperType: string) {
-  const model = "gemini-3.1-pro-preview";
+  // Primary model for generation is Flash for better rate limits, but with Google Search
+  const model = "gemini-3.1-pro-preview"; // Search requires Pro or specific Flash versions that support it
+  // Wait, skill says: "googleSearch tool is only available to gemini-3-pro-image-preview and gemini-3.1-flash-image-preview" - actually search tool is available to general models too.
+  
   const prompt = `
     You are an expert curriculum designer. 
     Search for and generate a full, realistic, and high-quality examination paper for:
@@ -194,7 +214,7 @@ export async function generateExternalExam(subject: string, grade: string, paper
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callAIWithRetry({
       model,
       contents: prompt,
       config: {
@@ -228,24 +248,22 @@ export async function generateExternalExam(subject: string, grade: string, paper
     return JSON.parse(cleanJson);
   } catch (err: any) {
     console.error("AI Generated Exam Error:", err);
-    // If it's a tool-related error, try without tools as a fallback
-    if (err.message?.includes('tool') || err.message?.includes('config')) {
-      try {
-        const fallbackResponse = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: prompt,
-          config: {
-            responseMimeType: "application/json",
-            // Keep same schema
-          }
-        });
-        const text = fallbackResponse.text || "{}";
-        const cleanJson = text.replace(/```json\n?|\n?```/g, "").trim();
-        return JSON.parse(cleanJson);
-      } catch (innerErr) {
-        throw innerErr;
-      }
+    
+    // Fallback to Flash without Search if Pro search fails or hits limits
+    try {
+      const fallbackResponse = await callAIWithRetry({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        }
+      });
+      const text = fallbackResponse.text || "{}";
+      const cleanJson = text.replace(/```json\n?|\n?```/g, "").trim();
+      return JSON.parse(cleanJson);
+    } catch (innerErr) {
+      throw innerErr;
     }
-    throw err;
   }
 }
+
