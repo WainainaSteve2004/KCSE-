@@ -201,7 +201,7 @@ export const AuthPage = () => {
             </button>
           </form>
 
-          <div className="mt-8 text-center">
+          <div className="mt-8 text-center space-y-4">
             <p className="text-zinc-500 dark:text-zinc-400">
               {isRegister ? 'Already have an account?' : "Don't have an account yet?"}
               <Link 
@@ -211,6 +211,11 @@ export const AuthPage = () => {
                 {isRegister ? 'Login' : 'Register Now'}
               </Link>
             </p>
+            <div className="pt-2">
+              <Link to="/" className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-sm font-medium transition-colors inline-flex items-center gap-2">
+                <span>Back to Home</span>
+              </Link>
+            </div>
           </div>
         </div>
       </motion.div>
