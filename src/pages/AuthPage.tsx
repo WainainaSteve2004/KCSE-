@@ -1,8 +1,9 @@
 import React, { useState, useContext } from 'react';
 import { motion } from 'motion/react';
-import { GraduationCap, Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, ChevronDown } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, ChevronDown } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { AuthContext, EDUCATION_SYSTEMS, GRADES } from '../App';
+import { Logo } from '../components/Logo';
 
 export const AuthPage = () => {
   const navigate = useNavigate();
@@ -75,8 +76,8 @@ export const AuthPage = () => {
       >
         <div className="bg-white dark:bg-zinc-900 rounded-[3rem] p-10 lg:p-12 shadow-2xl border border-zinc-200 dark:border-zinc-800">
           <div className="flex flex-col items-center mb-10 text-center">
-            <Link to="/" className="bg-indigo-600 p-4 rounded-2xl mb-6 shadow-lg shadow-indigo-200 dark:shadow-none">
-              <GraduationCap className="text-white w-8 h-8" />
+            <Link to="/" className="mb-6">
+              <Logo className="w-20 h-20" />
             </Link>
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white font-display">
               {isRegister ? 'Create your Account' : 'Welcome Back'}

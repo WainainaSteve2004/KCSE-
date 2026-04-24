@@ -1,7 +1,8 @@
 import React, { useContext } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { GraduationCap, Moon, Sun, Menu, X } from 'lucide-react';
+import { Moon, Sun, Menu, X } from 'lucide-react';
 import { AuthContext, ThemeContext } from '../App';
+import { Logo } from './Logo';
 
 const Navigation = () => {
   const auth = useContext(AuthContext);
@@ -24,11 +25,8 @@ const Navigation = () => {
   return (
     <nav className="fixed w-full z-[100] bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 transition-colors">
       <div className="container mx-auto px-6 h-20 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 group">
-          <div className="bg-indigo-600 p-2 rounded-xl group-hover:rotate-6 transition-transform">
-            <GraduationCap className="text-white w-6 h-6" />
-          </div>
-          <span className="font-bold text-xl tracking-tight text-zinc-900 dark:text-white">Examina AI</span>
+        <Link to="/">
+          <Logo className="w-12 h-12" />
         </Link>
 
         {/* Desktop Links */}

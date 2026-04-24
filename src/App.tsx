@@ -25,11 +25,12 @@ export interface User {
   grade?: string;
 }
 
-export const EDUCATION_SYSTEMS = ['Examina AI', 'CBE', 'KJSEA'];
+export const EDUCATION_SYSTEMS = ['Examina AI', 'CBE', 'KJSEA', 'KPSEA'];
 export const GRADES: Record<string, string[]> = {
   'Examina AI': ['Form 1', 'Form 2', 'Form 3', 'Form 4'],
   'CBE': ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'],
-  'KJSEA': ['Grade 7', 'Grade 8', 'Grade 9']
+  'KJSEA': ['Grade 7', 'Grade 8', 'Grade 9'],
+  'KPSEA': ['Grade 6']
 };
 
 interface AuthContextType {

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   BookOpen, 
-  GraduationCap, 
   LayoutDashboard, 
   FileText, 
   Users, 
@@ -33,6 +32,7 @@ import SubjectManager from '../components/SubjectManager';
 import Results from '../components/Results';
 import UsersList from '../components/UsersList';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
+import { Logo } from '../components/Logo';
 import { markTheoryAnswer, markMathAnswer, analyzePracticalImage, generateExternalExam } from '../services/aiService';
 import { AuthContext, ThemeContext, EDUCATION_SYSTEMS, GRADES } from '../App';
 
@@ -46,10 +46,9 @@ const DashboardNavbar = () => {
   return (
     <nav className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex items-center justify-between sticky top-0 z-50 transition-colors">
       <div className="flex items-center gap-2">
-        <div className="bg-indigo-600 p-2 rounded-lg">
-          <GraduationCap className="text-white w-6 h-6" />
-        </div>
-        <span className="font-bold text-xl tracking-tight text-zinc-900 dark:text-white">Examina AI</span>
+        <Link to="/">
+          <Logo className="w-10 h-10" />
+        </Link>
       </div>
       <div className="flex items-center gap-4">
         <button
@@ -399,6 +398,51 @@ const OnlineSearchModal = ({ onClose, onSelectExam }: { onClose: () => void, onS
       .catch(() => setSubjects([]));
   }, []);
 
+  const getFilteredSubjects = () => {
+    if (!subjects || subjects.length === 0) return [];
+    const system = auth?.user?.education_system;
+    
+    if (!system) return subjects;
+
+    // Mapping of keywords that commonly identify subjects for different systems
+    const juniorSecondaryKeywords = [
+      'health education', 'integrated science', 'pre-technical', 'lifeskills', 
+      'business studies', 'social studies', 'kiswahili', 'english', 'mathematics',
+      'agriculture', 'cre', 'ire', 'hre', 'performing arts', 'physical education',
+      'grade 7', 'grade 8', 'grade 9', 'science'
+    ];
+
+    const primaryKeywords = [
+      'science and technology', 'mathematics', 'english', 'kiswahili', 
+      'integrated science', 'creative arts', 'social studies', 'sciene',
+      'grade 1', 'grade 2', 'grade 3', 'grade 4', 'grade 5', 'grade 6', 'kpsea'
+    ];
+
+    const highSchoolKeywords = [
+      'biology', 'chemistry', 'physics', 'history', 'geography', 
+      'business studies', 'agriculture', 'computer studies', 'mathematics', 
+      'english', 'kiswahili', 'cre', 'ire', 'history', 'form 1', 'form 2', 'form 3', 'form 4'
+    ];
+
+    return subjects.filter(s => {
+      const name = s.name.toLowerCase();
+      
+      if (system === 'KJSEA') {
+        return juniorSecondaryKeywords.some(key => name.includes(key));
+      }
+
+      if (system === 'CBE' || system === 'KPSEA') {
+        return primaryKeywords.some(key => name.includes(key));
+      }
+
+      if (system === 'Examina AI') {
+        return highSchoolKeywords.some(key => name.includes(key));
+      }
+
+      return true;
+    });
+  };
+
   const handleSearch = async () => {
     if (!subjectName) {
       setError('Please select a subject');
@@ -410,19 +454,31 @@ const OnlineSearchModal = ({ onClose, onSelectExam }: { onClose: () => void, onS
     setResults(null);
 
     try {
-      const exam = await generateExternalExam(subjectName, auth?.user?.grade || 'General', paperType);
-      if (exam && exam.questions) {
+      // Use the student's full info for better AI tailoring
+      const tailoredGrade = `${auth?.user?.education_system || ''} ${auth?.user?.grade || 'General'}`.trim();
+      const exam = await generateExternalExam(subjectName, tailoredGrade, paperType);
+      
+      if (exam && exam.questions && exam.questions.length > 0) {
         setResults(exam);
       } else {
-        setError('No relevant exams found. Please try a different subject or paper.');
+        setError('The search did not return any results. This might be due to content filtering or temporary service unavailability. Please try a different subject.');
       }
-    } catch (err) {
-      console.error(err);
-      setError('Search failed. Please check your connection.');
+    } catch (err: any) {
+      console.error("Search Error:", err);
+      // More descriptive error messages
+      if (err.message?.includes('quota') || err.message?.includes('429')) {
+        setError('Rate limit exceeded. Please wait a moment and try again.');
+      } else if (err.message?.includes('API key')) {
+        setError('Search service configuration error. Please contact support.');
+      } else {
+        setError('Search failed. This can happen due to strict content filters or connection issues. Please try again or choose a different subject.');
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  const filteredSubjects = getFilteredSubjects();
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
@@ -455,8 +511,11 @@ const OnlineSearchModal = ({ onClose, onSelectExam }: { onClose: () => void, onS
                     className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-zinc-900 dark:text-white"
                   >
                     <option value="">Select Subject</option>
-                    {subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                    {filteredSubjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                   </select>
+                  {filteredSubjects.length === 0 && subjects.length > 0 && (
+                    <p className="text-[10px] text-zinc-400 italic">No subjects specifically listed for your level yet.</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">

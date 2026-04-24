@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { GraduationCap, Mail, Phone, MapPin, Twitter, Github, Linkedin } from 'lucide-react';
+import { Mail, Phone, MapPin, Twitter, Github, Linkedin } from 'lucide-react';
+import { Logo } from './Logo';
 
 const Footer = () => {
   return (
@@ -8,11 +9,8 @@ const Footer = () => {
       <div className="container mx-auto px-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
           <div className="space-y-6">
-            <Link to="/" className="flex items-center gap-2">
-              <div className="bg-indigo-600 p-2 rounded-xl">
-                <GraduationCap className="text-white w-6 h-6" />
-              </div>
-              <span className="font-bold text-xl tracking-tight text-zinc-900 dark:text-white">Examina AI</span>
+            <Link to="/">
+              <Logo className="w-12 h-12" />
             </Link>
             <p className="text-zinc-500 dark:text-zinc-400 leading-relaxed">
               Leading the way in AI-powered educational assessment. Empowering students to achieve their full potential.

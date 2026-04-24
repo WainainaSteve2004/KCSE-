@@ -11,7 +11,8 @@ import {
   ArrowRight,
   ShieldCheck,
   Zap,
-  Target
+  Target,
+  Search
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -103,12 +104,12 @@ const LandingPage = () => {
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {[
+              { title: 'Online Exam Search', desc: 'Search for external past papers and attempt them directly with AI marking.', icon: Search, color: 'text-rose-600', bg: 'bg-rose-50 dark:bg-rose-900/20' },
               { title: 'AI Exam Marking', desc: 'Instantaneous grading for multiple choice and structured questions.', icon: BrainCircuit, color: 'text-indigo-600', bg: 'bg-indigo-50 dark:bg-indigo-900/20' },
               { title: 'Theory Evaluation', desc: 'Detailed analysis of long-form answers checking for core concepts.', icon: GraduationCap, color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-900/20' },
               { title: 'Step-by-Step Math', desc: 'AI solves and grades mathematics problems showing logical progression.', icon: Calculator, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
               { title: 'Practical Analysis', desc: 'Upload images of laboratory setups for intelligent visual verification.', icon: FlaskConical, color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-900/20' },
               { title: 'Instant Results', desc: 'No more waiting weeks for results. Get marked instantly after submission.', icon: Zap, color: 'text-yellow-600', bg: 'bg-yellow-50 dark:bg-yellow-900/20' },
-              { title: 'Analytics Dashboard', desc: 'Track performance trends and identify areas for improvement.', icon: BarChart3, color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-900/20' },
             ].map((feature, i) => (
               <motion.div 
                 key={i}
