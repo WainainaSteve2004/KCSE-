@@ -1,6 +1,6 @@
-# KCSE AI Exam Platform
+# Examina AI Exam Platform
 
-This is a full-stack KCSE AI Exam Platform built with React, Vite, Express, and Supabase.
+This is a full-stack Examina AI Exam Platform built with React, Vite, Express, and Supabase.
 
 ## Vercel Deployment
 
@@ -18,7 +18,7 @@ Set the following environment variables in your Vercel project settings:
 - `SUPABASE_URL`: Your Supabase project URL.
 - `SUPABASE_ANON_KEY`: Your Supabase anonymous API key.
 - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role API key (required for backend operations).
-- `JWT_SECRET`: A secret key for JWT authentication (e.g., `kcse-secret-key-2026`).
+- `JWT_SECRET`: A secret key for JWT authentication (e.g., `examina-secret-key-2026`).
 - `GEMINI_API_KEY`: Your Google Gemini API key.
 
 ### 3. Deployment Steps

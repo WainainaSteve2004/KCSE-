@@ -5,7 +5,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 export async function markTheoryAnswer(question: string, markingScheme: string, studentAnswer: string, maxMarks: number) {
   const model = "gemini-3-flash-preview";
   const prompt = `
-    You are an expert KCSE examiner performing a thorough and intelligent evaluation.
+    You are an expert Examina AI examiner performing a thorough and intelligent evaluation.
     
     Question: ${question}
     Marking Scheme: ${markingScheme}

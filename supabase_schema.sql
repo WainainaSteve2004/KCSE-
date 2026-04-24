@@ -1,4 +1,4 @@
--- KCSE AI Exam Platform Supabase Schema
+-- Examina AI Exam Platform Supabase Schema
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   role TEXT CHECK(role IN ('admin', 'teacher', 'student', 'developer')) NOT NULL,
-  education_system TEXT, -- KCSE, CBE, KJSEA
+  education_system TEXT, -- Examina AI, CBE, KJSEA
   grade TEXT, -- Form 1, Grade 1, etc.
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

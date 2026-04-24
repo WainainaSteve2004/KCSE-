@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || "kcse-secret-key-2026";
+const JWT_SECRET = process.env.JWT_SECRET || "examina-secret-key-2026";
 
 // Auth Middleware
 export const authenticateToken = (req: any, res: any, next: any) => {
