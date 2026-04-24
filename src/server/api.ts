@@ -292,35 +292,80 @@ router.post("/exams", authenticateToken, async (req, res) => {
 
 // Submissions & AI Marking
 router.post("/submissions", authenticateToken, async (req, res) => {
-  const { exam_id, totalScore, percentage, results, answersToInsert } = req.body;
-  const student_id = (req as any).user.id;
+  const { exam_id, external_exam_title, totalScore, percentage, results, answersToInsert } = req.body;
+  const user = (req as any).user;
+  const student_id = user.id;
 
   try {
-    // Save all answers
-    const formattedAnswers = answersToInsert.map((ans: any) => ({
-      student_id,
-      exam_id,
-      question_id: ans.question_id,
-      answer_text: ans.answer_text,
-      image_url: ans.image_url || null,
-      ai_score: ans.ai_score,
-      ai_feedback: ans.ai_feedback
-    }));
+    let finalExamId = exam_id;
 
-    await supabase.from('student_answers').insert(formattedAnswers);
+    // If it's an external exam, we create a record for it so results can be tracked
+    if (!exam_id && external_exam_title) {
+      // Find or create a 'General' subject for external exams
+      const { data: subjects } = await supabase.from('subjects').select('id').eq('name', 'General').single();
+      let subject_id = subjects?.id;
+      
+      if (!subject_id) {
+        const { data: newSub } = await supabase.from('subjects').insert([{ name: 'General', code: 'GEN' }]).select().single();
+        subject_id = newSub?.id;
+      }
 
-    await supabase.from('results').insert([{
+      const { data: newExam, error: examError } = await supabase
+        .from('exams')
+        .insert([{ 
+          title: `[External] ${external_exam_title}`, 
+          subject_id,
+          duration: 60,
+          education_system: user.education_system || 'External',
+          grade: user.grade || 'General',
+          created_by: student_id
+        }])
+        .select()
+        .single();
+      
+      if (examError) throw examError;
+      finalExamId = newExam.id;
+
+      // We don't necessarily need to insert all questions into the 'questions' table 
+      // if we only care about the result, but for a full history we should.
+      // However, for temp exams, we might just store the result feedback.
+    }
+
+    if (!finalExamId) {
+      return res.status(400).json({ error: "Exam ID or External Title required" });
+    }
+
+    // Save result summary
+    const { data: submission, error: resultError } = await supabase.from('results').insert([{
       student_id,
-      exam_id,
+      exam_id: finalExamId,
       total_score: totalScore,
       percentage,
-      feedback: `You scored ${totalScore} points`
-    }]);
+      feedback: `You completed "${external_exam_title || 'an exam'}" with a score of ${percentage.toFixed(1)}%`
+    }]).select().single();
 
-    res.json({ totalScore, percentage, results });
-  } catch (error) {
+    if (resultError) throw resultError;
+
+    // Save detailed answers if possible (question_id might be tricky for external exams)
+    // For external exams, question_id in client is a temp number. 
+    // We can skip detailed answer saving for external exams or just save what we can.
+    if (exam_id) {
+      const formattedAnswers = answersToInsert.map((ans: any) => ({
+        student_id,
+        exam_id: finalExamId,
+        question_id: ans.question_id,
+        answer_text: ans.answer_text,
+        image_url: ans.image_data || null,
+        ai_score: ans.ai_score,
+        ai_feedback: ans.ai_feedback
+      }));
+      await supabase.from('student_answers').insert(formattedAnswers);
+    }
+
+    res.json({ id: submission.id, totalScore, percentage, results });
+  } catch (error: any) {
     console.error("Submission error:", error);
-    res.status(500).json({ error: "Failed to process submission" });
+    res.status(500).json({ error: error.message || "Failed to process submission" });
   }
 });
 

@@ -176,3 +176,59 @@ export async function analyzePracticalImage(question: string, base64Image: strin
     throw err;
   }
 }
+
+export async function generateExternalExam(subject: string, grade: string, paperType: string) {
+  const model = "gemini-3-flash-preview";
+  const prompt = `
+    You are an expert curriculum designer. 
+    Search for and generate a full, realistic, and high-quality examination paper for:
+    Subject: ${subject}
+    Level: ${grade}
+    Paper: ${paperType}
+    
+    The paper should align strictly with common educational standards for ${grade}.
+    Include 5 varied and challenging questions.
+    Ensure each question has a detailed marking scheme for the AI to use during evaluation.
+    
+    Return a structured JSON.
+  `;
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }] as any,
+      toolConfig: { includeServerSideToolInvocations: true } as any,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          questions: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                question_text: { type: Type.STRING },
+                type: { type: Type.STRING, enum: ["theory", "math", "practical"] },
+                marks: { type: Type.NUMBER },
+                marking_scheme: { type: Type.STRING }
+              },
+              required: ["question_text", "type", "marks", "marking_scheme"]
+            }
+          }
+        },
+        required: ["title", "questions"]
+      }
+    }
+  });
+
+  try {
+    const text = response.text || "{}";
+    const cleanJson = text.replace(/```json\n?|\n?```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (err) {
+    console.error("Failed to parse AI Generated Exam:", response.text);
+    return null;
+  }
+}

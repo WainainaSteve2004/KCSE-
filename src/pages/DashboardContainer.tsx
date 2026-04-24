@@ -23,14 +23,17 @@ import {
   Eye,
   EyeOff,
   Sun,
-  Moon
+  Moon,
+  Search,
+  Loader2,
+  Sparkles
 } from 'lucide-react';
 import BulkExamUploader from '../components/BulkExamUploader';
 import SubjectManager from '../components/SubjectManager';
 import Results from '../components/Results';
 import UsersList from '../components/UsersList';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
-import { markTheoryAnswer, markMathAnswer, analyzePracticalImage } from '../services/aiService';
+import { markTheoryAnswer, markMathAnswer, analyzePracticalImage, generateExternalExam } from '../services/aiService';
 import { AuthContext, ThemeContext, EDUCATION_SYSTEMS, GRADES } from '../App';
 
 // --- Components ---
@@ -206,6 +209,7 @@ const DashboardContainer = () => {
   const auth = useContext(AuthContext);
   const [tab, setTab] = useState('dashboard');
   const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
+  const [tempExam, setTempExam] = useState<any>(null);
 
   if (!auth?.user) return null;
 
@@ -216,8 +220,15 @@ const DashboardContainer = () => {
         <DashboardSidebar currentTab={tab} setTab={setTab} />
         <main className="flex-1 p-8 max-h-[calc(100vh-73px)] overflow-y-auto bg-white dark:bg-zinc-950">
           <AnimatePresence mode="wait">
-            {selectedExamId ? (
-              <ExamPage examId={selectedExamId} onFinish={() => setSelectedExamId(null)} />
+            {selectedExamId || tempExam ? (
+              <ExamPage 
+                examId={selectedExamId || undefined} 
+                externalExam={tempExam}
+                onFinish={() => {
+                  setSelectedExamId(null);
+                  setTempExam(null);
+                }} 
+              />
             ) : (
               <motion.div
                 key={tab}
@@ -226,7 +237,7 @@ const DashboardContainer = () => {
                 exit={{ opacity: 0, x: 10 }}
               >
                 {tab === 'dashboard' && <DashboardContent />}
-                {tab === 'exams' && <ExamList onSelectExam={setSelectedExamId} />}
+                {tab === 'exams' && <ExamList onSelectExam={setSelectedExamId} onSelectTempExam={setTempExam} />}
                 {tab === 'profile' && <ProfilePage />}
                 {tab === 'subjects' && <SubjectManager />}
                 {tab === 'bulk-uploader' && <BulkExamUploader />}
@@ -248,10 +259,11 @@ const DashboardContainer = () => {
 // [ExamList, CreateExamModal, ExamPage, ProfilePage] - I'll import or define them here.
 // For brevity, I'll just include the structure and assume they are needed.
 
-const ExamList = ({ onSelectExam }: { onSelectExam: (id: number) => void }) => {
+const ExamList = ({ onSelectExam, onSelectTempExam }: { onSelectExam: (id: number) => void, onSelectTempExam: (exam: any) => void }) => {
   const auth = useContext(AuthContext);
   const [exams, setExams] = useState<any[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
     fetch('/api/exams', {
@@ -269,15 +281,26 @@ const ExamList = ({ onSelectExam }: { onSelectExam: (id: number) => void }) => {
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">Available Exams</h1>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1">Select a paper to start your examination.</p>
         </div>
-        {(auth?.user?.role === 'admin' || auth?.user?.role === 'teacher' || auth?.user?.role === 'developer') && (
-          <button 
-            onClick={() => setShowCreate(true)}
-            className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 dark:shadow-indigo-900/20"
-          >
-            <Plus className="w-5 h-5" />
-            Create Exam
-          </button>
-        )}
+        <div className="flex items-center gap-4">
+          {auth?.user?.role === 'student' && (
+            <button 
+              onClick={() => setShowSearch(true)}
+              className="bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-zinc-800 transition-all border border-indigo-100 dark:border-zinc-800 shadow-sm"
+            >
+              <Search className="w-5 h-5" />
+              Online Search
+            </button>
+          )}
+          {(auth?.user?.role === 'admin' || auth?.user?.role === 'teacher' || auth?.user?.role === 'developer') && (
+            <button 
+              onClick={() => setShowCreate(true)}
+              className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 dark:shadow-indigo-900/20"
+            >
+              <Plus className="w-5 h-5" />
+              Create Exam
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -331,6 +354,191 @@ const ExamList = ({ onSelectExam }: { onSelectExam: (id: number) => void }) => {
           .then(res => res.json())
           .then(setExams);
       }} />}
+
+      {showSearch && <OnlineSearchModal onClose={() => setShowSearch(false)} onSelectExam={onSelectTempExam} />}
+    </div>
+  );
+};
+
+const OnlineSearchModal = ({ onClose, onSelectExam }: { onClose: () => void, onSelectExam: (exam: any) => void }) => {
+  const auth = useContext(AuthContext);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [subjectName, setSubjectName] = useState('');
+  const [paperType, setPaperType] = useState('Paper 1');
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<any>(null);
+  const [error, setError] = useState('');
+
+  const isHighSchool = auth?.user?.grade?.includes('Form') || (auth?.user?.education_system === 'Examina AI');
+
+  useEffect(() => {
+    fetch('/api/subjects')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setSubjects(Array.isArray(data) ? data : []))
+      .catch(() => setSubjects([]));
+  }, []);
+
+  const handleSearch = async () => {
+    if (!subjectName) {
+      setError('Please select a subject');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setResults(null);
+
+    try {
+      const exam = await generateExternalExam(subjectName, auth?.user?.grade || 'General', paperType);
+      if (exam && exam.questions) {
+        setResults(exam);
+      } else {
+        setError('No relevant exams found. Please try a different subject or paper.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Search failed. Please check your connection.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0, y: 20 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col"
+      >
+        <div className="px-8 py-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-100 dark:bg-indigo-900/30 p-2 rounded-xl">
+              <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <h2 className="text-xl font-bold text-zinc-900 dark:text-white">Online Exam Search</h2>
+          </div>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="p-8 space-y-6 overflow-y-auto max-h-[70vh]">
+          {!results ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-zinc-500 uppercase tracking-wider">Subject</label>
+                  <select 
+                    value={subjectName}
+                    onChange={e => setSubjectName(e.target.value)}
+                    className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-zinc-900 dark:text-white"
+                  >
+                    <option value="">Select Subject</option>
+                    {subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-zinc-500 uppercase tracking-wider">Education Level</label>
+                  <div className="w-full px-5 py-4 bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-zinc-500 font-medium">
+                    {auth?.user?.education_system} - {auth?.user?.grade}
+                  </div>
+                </div>
+              </div>
+
+              {isHighSchool && (
+                <div className="space-y-3">
+                  <label className="text-sm font-bold text-zinc-500 uppercase tracking-wider">Paper Type</label>
+                  <div className="flex gap-4">
+                    {['Paper 1', 'Paper 2', 'Paper 3'].map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setPaperType(p)}
+                        className={`flex-1 py-3 rounded-xl font-bold border transition-all ${
+                          paperType === p 
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100 dark:shadow-none' 
+                          : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-indigo-400'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <div className="p-4 bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 rounded-2xl text-sm flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5" />
+                  {error}
+                </div>
+              )}
+
+              <button
+                onClick={handleSearch}
+                disabled={loading}
+                className="w-full py-5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-all disabled:opacity-50 text-lg shadow-xl"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    Searching External Papers...
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-6 h-6" />
+                    Search Exam
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            <motion.div 
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="space-y-6"
+            >
+              <div className="p-8 bg-indigo-50 dark:bg-indigo-900/20 rounded-3xl border border-indigo-100 dark:border-indigo-900/30 text-center">
+                <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">Search Result</p>
+                <h3 className="text-2xl font-black text-zinc-900 dark:text-white leading-tight">{results.title}</h3>
+                <div className="flex items-center justify-center gap-6 mt-6">
+                  <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 font-medium">
+                    <FileText className="w-5 h-5" />
+                    {results.questions.length} Questions
+                  </div>
+                  <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 font-medium">
+                    <Clock className="w-5 h-5" />
+                    60 mins
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-sm font-bold text-zinc-500 uppercase">System Intelligence Note</p>
+                <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400 italic">
+                  This exam has been dynamically fetched and structured for attempt. AI marking is fully enabled for all questions in this paper.
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-4 pt-4">
+                <button 
+                  onClick={() => setResults(null)}
+                  className="flex-1 py-4 px-6 rounded-2xl font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
+                >
+                  Search Again
+                </button>
+                <button 
+                  onClick={() => onSelectExam(results)}
+                  className="flex-[2] py-4 px-6 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 dark:shadow-none flex items-center justify-center gap-2"
+                >
+                  Attempt Paper Now
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </div>
+      </motion.div>
     </div>
   );
 };
@@ -637,7 +845,7 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
   );
 };
 
-const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }) => {
+const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externalExam?: any, onFinish: () => void }) => {
   const auth = useContext(AuthContext);
   const [exam, setExam] = useState<any>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -647,15 +855,20 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
   const [results, setResults] = useState<any>(null);
 
   useEffect(() => {
-    fetch(`/api/exams/${examId}`, {
-      headers: { 'Authorization': `Bearer ${auth?.token}` }
-    })
-    .then(res => res.json())
-    .then(data => {
-      setExam(data);
-      setTimeLeft(data.duration * 60);
-    });
-  }, [examId]);
+    if (externalExam) {
+      setExam({ ...externalExam, duration: 60 });
+      setTimeLeft(60 * 60);
+    } else if (examId) {
+      fetch(`/api/exams/${examId}`, {
+        headers: { 'Authorization': `Bearer ${auth?.token}` }
+      })
+      .then(res => res.json())
+      .then(data => {
+        setExam(data);
+        setTimeLeft(data.duration * 60);
+      });
+    }
+  }, [examId, externalExam]);
 
   useEffect(() => {
     if (timeLeft > 0 && !results) {
@@ -690,15 +903,21 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      const results = [];
+      const resultsArray = [];
       const answersToInsert = [];
       let totalScore = 0;
       let maxPossibleScore = 0;
 
-      for (const [qId, data] of Object.entries(answers) as [string, any][]) {
-        const question = exam.questions.find((q: any) => q.id === parseInt(qId));
-        if (!question) continue;
+      // Assign temporary IDs if it's an external exam without IDs
+      const examQuestions = exam.questions.map((q: any, idx: number) => ({
+        ...q,
+        id: q.id || idx + 999990 // Use very high range for temp IDs
+      }));
 
+      for (const question of examQuestions) {
+        const qId = question.id;
+        const data = answers[qId] || {};
+        
         maxPossibleScore += question.marks;
         let aiResult;
 
@@ -716,12 +935,12 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
         }
 
         const score = aiResult?.score || 0;
-        const feedback = aiResult?.explanation || aiResult?.analysis || aiResult?.solution || "No feedback provided";
+        const feedback = aiResult?.explanation || aiResult?.analysis || aiResult?.solution || aiResult?.modelAnswer || "No feedback provided";
         totalScore += score;
 
-        results.push({ question_id: parseInt(qId), score, feedback });
+        resultsArray.push({ question_id: qId, score, feedback });
         answersToInsert.push({
-          question_id: parseInt(qId),
+          question_id: qId,
           answer_text: data.text || '',
           image_data: data.image || null,
           ai_score: score,
@@ -732,10 +951,11 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
       const percentage = maxPossibleScore > 0 ? (totalScore / maxPossibleScore) * 100 : 0;
 
       const payload = {
-        exam_id: examId,
+        exam_id: examId || null,
+        external_exam_title: externalExam ? exam.title : null,
         totalScore,
         percentage,
-        results,
+        results: resultsArray,
         answersToInsert
       };
 
@@ -749,9 +969,11 @@ const ExamPage = ({ examId, onFinish }: { examId: number, onFinish: () => void }
       });
       const data = await res.json();
       if (res.ok) {
-        setResults(data);
+        setResults({ ...data, results: resultsArray }); // Pass our resultsArray for local display
       } else {
         console.error("Submission failed:", data.error);
+        // Still show locally if server save fails
+        setResults({ totalScore, percentage, results: resultsArray });
       }
     } catch (e) {
       console.error(e);

@@ -54,12 +54,21 @@ const LandingPage = () => {
                 </Link>
               </div>
               <div className="mt-12 flex items-center gap-6 justify-center lg:justify-start">
-                <div className="flex -space-x-3">
-                  {[1, 2, 3, 4].map(i => (
-                    <div key={i} className="w-10 h-10 rounded-full border-2 border-indigo-900 bg-indigo-800" />
+                <div className="flex -space-x-4">
+                  {[
+                    "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=1588&auto=format&fit=crop",
+                    "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?q=80&w=1587&auto=format&fit=crop",
+                    "https://images.unsplash.com/photo-1531123897727-8f129e1688ce?q=80&w=1587&auto=format&fit=crop",
+                    "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=1740&auto=format&fit=crop"
+                  ].map((src, i) => (
+                    <div key={i} className="w-12 h-12 rounded-full border-4 border-indigo-900 overflow-hidden shadow-lg transform hover:scale-110 transition-transform cursor-pointer">
+                      <img src={src} alt={`Student ${i}`} className="w-full h-full object-cover" />
+                    </div>
                   ))}
                 </div>
-                <p className="text-sm text-indigo-200/60 font-medium">Joined by 10,000+ students nationwide</p>
+                <p className="text-sm text-white/80 font-semibold tracking-wide">
+                  Joined by <span className="text-indigo-400 font-bold">10,000+ students</span> nationwide
+                </p>
               </div>
             </motion.div>
             

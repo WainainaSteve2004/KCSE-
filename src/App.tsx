@@ -65,9 +65,10 @@ const AppContent = () => {
       {!isDashboard && <Navigation />}
       <main className="flex-grow">
         <AnimatePresence mode="wait">
-          <Routes location={location} key={location.pathname}>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/about" element={<AboutPage />} />
+          <div key={location.pathname}>
+            <Routes location={location}>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/about" element={<AboutPage />} />
             <Route path="/features" element={<FeaturesPage />} />
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/login" element={<AuthPage />} />
@@ -84,6 +85,7 @@ const AppContent = () => {
             
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </div>
         </AnimatePresence>
       </main>
       {!isDashboard && <Footer />}
