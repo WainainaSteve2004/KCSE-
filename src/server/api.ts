@@ -53,10 +53,16 @@ router.post("/auth/login", async (req, res) => {
   const { email, password } = req.body;
   
   // Requirement: Admin access restricted to specific credentials
-  const ADMIN_EMAIL = 'charles.ngiabi@kutambua';
+  const ADMIN_EMAIL = 'charles.ngiabi@kutambua.com';
   const ADMIN_PASS = '41272959C';
 
+  console.log(`Login attempt for: ${email}`);
+
   try {
+    if (!process.env.SUPABASE_URL) {
+      console.error("SUPABASE_URL is missing in environment variables");
+      return res.status(500).json({ error: "Server configuration error: SUPABASE_URL missing" });
+    }
     const { data: user, error } = await supabase
       .from('users')
       .select('*')

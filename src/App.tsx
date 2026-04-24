@@ -176,7 +176,16 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      const data = await res.json();
+      
+      const contentType = res.headers.get('content-type');
+      let data;
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(`Server returned non-JSON response: ${res.status} ${res.statusText}. This usually means the backend crashed or environment variables are missing.`);
+      }
+
       if (res.ok) {
         if (isRegister) {
           setSuccess(data.message || 'Registration successful. Please log in.');
@@ -191,8 +200,11 @@ const LoginPage = ({ onAuth }: { onAuth: (token: string, user: User) => void }) 
           setShowTroubleshoot(true);
         }
       }
-    } catch (err) {
-      setError('Connection error');
+    } catch (err: any) {
+      console.error('Auth error:', err);
+      setError(err.message === 'Failed to fetch' || err.message.includes('Connection error') 
+        ? 'Connection error: Could not reach the server. Please check your internet or if the backend is running.' 
+        : err.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
