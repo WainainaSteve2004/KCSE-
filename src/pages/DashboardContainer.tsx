@@ -117,7 +117,7 @@ const DashboardSidebar = ({ currentTab, setTab }: { currentTab: string, setTab: 
 
 // --- Sub-components (Re-used from original App.tsx) ---
 
-const DashboardContent = () => {
+const DashboardContent = ({ setTab, onOpenSearch }: { setTab: (t: string) => void, onOpenSearch: () => void }) => {
   const auth = useContext(AuthContext);
   const [stats, setStats] = useState<any>(null);
 
@@ -136,21 +136,32 @@ const DashboardContent = () => {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-3xl font-bold text-zinc-900 dark:text-white capitalize">{auth?.user?.role} Dashboard</h1>
-        <div className="mt-2">
-          {auth?.user?.role === 'student' ? (
-            <div className="space-y-1">
-              <h2 className="text-2xl font-bold text-zinc-900 dark:text-white">
-                Welcome back, {auth?.user?.name.split(' ')[0]}. This is your {auth?.user?.grade} Dashboard.
-              </h2>
-            </div>
-          ) : (
-            <p className="text-zinc-500 dark:text-zinc-400">
-              Welcome back, {auth?.user?.name}. Here's what's happening today.
-            </p>
-          )}
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-zinc-900 dark:text-white capitalize">{auth?.user?.role} Dashboard</h1>
+          <div className="mt-2">
+            {auth?.user?.role === 'student' ? (
+              <div className="space-y-1">
+                <h2 className="text-2xl font-bold text-zinc-900 dark:text-white">
+                  Welcome back, {auth?.user?.name.split(' ')[0]}. This is your {auth?.user?.grade} Dashboard.
+                </h2>
+              </div>
+            ) : (
+              <p className="text-zinc-500 dark:text-zinc-400">
+                Welcome back, {auth?.user?.name}. Here's what's happening today.
+              </p>
+            )}
+          </div>
         </div>
+        {auth?.user?.role === 'student' && (
+          <button 
+            onClick={onOpenSearch}
+            className="hidden sm:flex bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-6 py-3 rounded-xl font-bold items-center gap-2 hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-all shadow-lg"
+          >
+            <Search className="w-5 h-5" />
+            Online Search
+          </button>
+        )}
       </header>
 
       {auth?.user?.role !== 'student' && stats && (
@@ -192,7 +203,10 @@ const DashboardContent = () => {
           <div className="relative z-10">
             <h2 className="text-2xl font-bold mb-2">Ready for your next exam?</h2>
             <p className="text-indigo-100 mb-6 max-w-xs">Take a practice Examina AI paper and get instant AI feedback on your performance.</p>
-            <button className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition-all">
+            <button 
+              onClick={() => setTab('exams')}
+              className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition-all"
+            >
               Browse Exams
             </button>
           </div>
@@ -210,6 +224,7 @@ const DashboardContainer = () => {
   const [tab, setTab] = useState('dashboard');
   const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
   const [tempExam, setTempExam] = useState<any>(null);
+  const [showSearch, setShowSearch] = useState(false);
 
   if (!auth?.user) return null;
 
@@ -236,8 +251,8 @@ const DashboardContainer = () => {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 10 }}
               >
-                {tab === 'dashboard' && <DashboardContent />}
-                {tab === 'exams' && <ExamList onSelectExam={setSelectedExamId} onSelectTempExam={setTempExam} />}
+                {tab === 'dashboard' && <DashboardContent setTab={setTab} onOpenSearch={() => setShowSearch(true)} />}
+                {tab === 'exams' && <ExamList onSelectExam={setSelectedExamId} onSelectTempExam={setTempExam} showSearch={showSearch} setShowSearch={setShowSearch} />}
                 {tab === 'profile' && <ProfilePage />}
                 {tab === 'subjects' && <SubjectManager />}
                 {tab === 'bulk-uploader' && <BulkExamUploader />}
@@ -249,6 +264,8 @@ const DashboardContainer = () => {
           </AnimatePresence>
         </main>
       </div>
+
+      {showSearch && <OnlineSearchModal onClose={() => setShowSearch(false)} onSelectExam={setTempExam} />}
     </div>
   );
 };
@@ -259,11 +276,15 @@ const DashboardContainer = () => {
 // [ExamList, CreateExamModal, ExamPage, ProfilePage] - I'll import or define them here.
 // For brevity, I'll just include the structure and assume they are needed.
 
-const ExamList = ({ onSelectExam, onSelectTempExam }: { onSelectExam: (id: number) => void, onSelectTempExam: (exam: any) => void }) => {
+const ExamList = ({ onSelectExam, onSelectTempExam, showSearch, setShowSearch }: { 
+  onSelectExam: (id: number) => void, 
+  onSelectTempExam: (exam: any) => void,
+  showSearch: boolean,
+  setShowSearch: (v: boolean) => void
+}) => {
   const auth = useContext(AuthContext);
   const [exams, setExams] = useState<any[]>([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
     fetch('/api/exams', {
@@ -285,7 +306,7 @@ const ExamList = ({ onSelectExam, onSelectTempExam }: { onSelectExam: (id: numbe
           {auth?.user?.role === 'student' && (
             <button 
               onClick={() => setShowSearch(true)}
-              className="bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-zinc-800 transition-all border border-indigo-100 dark:border-zinc-800 shadow-sm"
+              className="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-all shadow-lg"
             >
               <Search className="w-5 h-5" />
               Online Search
