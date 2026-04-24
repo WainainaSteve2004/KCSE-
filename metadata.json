@@ -1,7 +1,8 @@
 {
-  "name": "Mtihani",
+  "name": "Kutambua Mtihani",
   "description": "A comprehensive platform for KCSE past papers with AI-powered marking, now integrated with Supabase for scalable data management.",
   "requestFramePermissions": [
     "camera"
-  ]
+  ],
+  "majorCapabilities": []
 }
