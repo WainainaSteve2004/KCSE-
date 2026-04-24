@@ -639,9 +639,20 @@ router.get("/users/me", authenticateToken, async (req, res) => {
 
 router.put("/users/me", authenticateToken, async (req, res) => {
   const { name, education_system, grade } = req.body;
+  const userRole = (req as any).user.role;
+  
+  const updateData: any = { name };
+  
+  // Requirement: Students cannot modify education_system and grade once set
+  // Only non-students (admin/teacher/developer) or the system can update these
+  if (userRole !== 'student') {
+    if (education_system) updateData.education_system = education_system;
+    if (grade) updateData.grade = grade;
+  }
+
   const { data: user, error } = await supabase
     .from('users')
-    .update({ name, education_system, grade })
+    .update(updateData)
     .eq('id', (req as any).user.id)
     .select('id, name, email, role, education_system, grade')
     .single();

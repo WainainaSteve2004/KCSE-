@@ -1342,7 +1342,26 @@ const ProfilePage = () => {
               />
             </div>
             
-            {auth?.user?.role === 'student' && (
+            {auth?.user?.role === 'student' ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Education System</label>
+                  <div className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-500 font-medium flex items-center justify-between">
+                    <span>{educationSystem || 'Not Set'}</span>
+                    <div className="p-1 bg-zinc-200 dark:bg-zinc-700 rounded text-[10px] text-zinc-500 uppercase font-bold px-2 tracking-wider">Locked</div>
+                  </div>
+                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1">Locked after registration.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Grade</label>
+                  <div className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-500 font-medium flex items-center justify-between">
+                    <span>{grade || 'Not Set'}</span>
+                    <div className="p-1 bg-zinc-200 dark:bg-zinc-700 rounded text-[10px] text-zinc-500 uppercase font-bold px-2 tracking-wider">Locked</div>
+                  </div>
+                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1">Contact admin for promotion.</p>
+                </div>
+              </>
+            ) : (
               <>
                 <div>
                   <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Education System</label>
