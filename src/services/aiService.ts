@@ -5,19 +5,28 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 export async function markTheoryAnswer(question: string, markingScheme: string, studentAnswer: string, maxMarks: number) {
   const model = "gemini-3-flash-preview";
   const prompt = `
-    You are an expert KCSE examiner. 
+    You are an expert KCSE examiner performing a thorough and intelligent evaluation.
+    
     Question: ${question}
     Marking Scheme: ${markingScheme}
     Student Answer: ${studentAnswer}
     Max Marks: ${maxMarks}
 
-    Evaluate the student's answer based on the marking scheme. 
-    Be fair and understand the meaning even if wording is different.
-    Provide a score out of ${maxMarks}, a correct model answer, and a brief explanation of the marks awarded.
+    INSTRUCTIONS:
+    1. Deep Analysis: Understand the student's response in context. Do not rely on exact keyword matching.
+    2. Answer Comparison: Compare the response with the marking scheme or correct answer. Focus on meaning, accuracy, and relevance.
+    3. Unbiased Marking: Grade fairly and objectively.
+    4. Partial Marking: Award partial marks (in increments of 0.5 where appropriate) if the student demonstrates partial understanding or provides a correct idea.
+    5. Scoring: Provide a score out of ${maxMarks}.
+    6. Feedback: 
+       - Clear explanation of marks awarded or deducted.
+       - Identify specific mistakes.
+       - Provide suggestions for improvement.
+       - State the correct answer for the student's reference.
   `;
 
   const response = await ai.models.generateContent({
-    model,
+    model: "gemini-3.1-pro-preview",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -33,22 +42,37 @@ export async function markTheoryAnswer(question: string, markingScheme: string, 
     }
   });
 
-  return JSON.parse(response.text || "{}");
+  try {
+    const text = response.text || "{}";
+    // Clean up in case there are markdown code blocks
+    const cleanJson = text.replace(/```json\n?|\n?```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (err) {
+    console.error("Failed to parse AI response as JSON:", response.text);
+    throw err;
+  }
 }
 
 export async function markMathAnswer(question: string, markingScheme: string, studentAnswer: string, maxMarks: number) {
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-3.1-pro-preview";
   const prompt = `
-    You are an expert Mathematics teacher.
+    You are an expert Mathematics teacher performing an intelligent evaluation.
+    
     Question: ${question}
     Marking Scheme: ${markingScheme}
     Student Answer: ${studentAnswer}
     Max Marks: ${maxMarks}
 
-    Solve the math problem step-by-step. 
-    Compare your steps with the student's answer.
-    Award partial marks for correct steps even if the final answer is wrong.
-    Provide a score out of ${maxMarks}, the full step-by-step correct solution, and an explanation of the grading.
+    INSTRUCTIONS:
+    1. Step-by-Step Verification: Verify the student's calculations and logic step-by-step.
+    2. Partial Marks: Award marks for correct steps even if the final numerical answer is wrong.
+    3. Deep Analysis: Focus on mathematical logic and method, not just the final result.
+    4. Context Understanding: Understand the student's handwriting representation or typing notation (e.g., ^ for power, * for multiplication).
+    5. Feedback: 
+       - Provide the full step-by-step correct solution.
+       - Identify exactly where the student went wrong.
+       - Suggest corrective measures.
+       - Provide a score out of ${maxMarks} (partial credit encouraged).
   `;
 
   const response = await ai.models.generateContent({
@@ -68,21 +92,34 @@ export async function markMathAnswer(question: string, markingScheme: string, st
     }
   });
 
-  return JSON.parse(response.text || "{}");
+  try {
+    const text = response.text || "{}";
+    const cleanJson = text.replace(/```json\n?|\n?```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (err) {
+    console.error("Failed to parse AI Math response:", response.text);
+    throw err;
+  }
 }
 
 export async function analyzePracticalImage(question: string, base64Image: string | null, studentExplanation: string, maxMarks: number, imageUrl: string | null = null) {
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-3.1-pro-preview";
   const prompt = `
-    Analyze this image of a science experiment/practical setup.
-    Question Context: ${question}
+    Analyze this image of a science experiment/practical setup as an expert lab instructor.
+    
+    Context: ${question}
     Student's Explanation: ${studentExplanation}
     Max Marks: ${maxMarks}
 
-    Identify the apparatus, chemicals, and the experiment being performed.
-    Evaluate if the setup is correct and if the student's explanation matches the visual evidence.
-    Provide a score out of ${maxMarks}, an analysis of the image, and an explanation of the outcome.
-    Return the result in JSON format with keys: score, analysis, explanation.
+    INSTRUCTIONS:
+    1. Image Deep Analysis: Identify the apparatus, chemicals, and the specific experiment setup.
+    2. Verification: Evaluate if the setup is scientifically sound and corresponds to the question.
+    3. Comparison: Correlate the visual evidence with the student's written explanation.
+    4. Partial Credit: Award marks for correct apparatus identification or partial setup success.
+    5. Feedback: 
+       - Detailed analysis of the setup.
+       - Clear explanation of score (out of ${maxMarks}).
+       - Suggestions for improved practical technique.
   `;
 
   let imagePart;
@@ -130,5 +167,12 @@ export async function analyzePracticalImage(question: string, base64Image: strin
     }
   });
 
-  return JSON.parse(responseJson.text || "{}");
+  try {
+    const text = responseJson.text || "{}";
+    const cleanJson = text.replace(/```json\n?|\n?```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (err) {
+    console.error("Failed to parse AI Practical response:", responseJson.text);
+    throw err;
+  }
 }

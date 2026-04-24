@@ -247,6 +247,10 @@ router.post("/exams", authenticateToken, async (req, res) => {
   if (role !== 'admin' && role !== 'developer' && role !== 'teacher') return res.sendStatus(403);
   const { subject_id, title, duration, questions, education_system, grade, original_file_url } = req.body;
   
+  if (questions && questions.length > 50) {
+    return res.status(400).json({ error: "Exam cannot exceed 50 questions." });
+  }
+
   try {
     const { data: exam, error: examError } = await supabase
       .from('exams')

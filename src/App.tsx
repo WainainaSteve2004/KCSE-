@@ -622,6 +622,11 @@ const CreateExamModal = ({ onClose, onCreated }: { onClose: () => void, onCreate
       return;
     }
 
+    if (questions.length > 50) {
+      setError(`Exam exceeds the maximum limit of 50 questions (Current: ${questions.length}).`);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {

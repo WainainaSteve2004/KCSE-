@@ -359,6 +359,12 @@ const BulkExamUploader = () => {
       return;
     }
 
+    // Requirement: Max 50 questions per exam
+    if (questions.length > 50) {
+      setError(`Exam exceeds the maximum limit of 50 questions. Current count: ${questions.length}. Please remove some questions.`);
+      return;
+    }
+
     // Check if all subjects are mapped
     const unmapped = detectedSubjects.filter(s => !subjectMappings[s]);
     if (unmapped.length > 0 && detectedSubjects.length > 0) {
@@ -420,6 +426,8 @@ const BulkExamUploader = () => {
       setUploadSummary({
         totalQuestions: questions.length,
         totalSubjects: results.length,
+        educationSystem,
+        grade,
         details: results
       });
       
@@ -651,6 +659,14 @@ const BulkExamUploader = () => {
                   <div className="p-3 bg-white/10 rounded-xl">
                     <p className="text-xs text-indigo-300 uppercase font-bold">Subjects Detected</p>
                     <p className="text-2xl font-bold">{uploadSummary.totalSubjects}</p>
+                  </div>
+                  <div className="p-3 bg-white/10 rounded-xl">
+                    <p className="text-xs text-indigo-300 uppercase font-bold">System</p>
+                    <p className="text-sm font-bold truncate">{uploadSummary.educationSystem}</p>
+                  </div>
+                  <div className="p-3 bg-white/10 rounded-xl">
+                    <p className="text-xs text-indigo-300 uppercase font-bold">Grade</p>
+                    <p className="text-sm font-bold truncate">{uploadSummary.grade}</p>
                   </div>
                 </div>
                 <div className="space-y-2">
