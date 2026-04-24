@@ -50,14 +50,68 @@ interface AnalyticsData {
   } | null;
 }
 
+interface StudentHistoryPoint {
+  submitted_at: string;
+  percentage: number;
+  exam_title: string;
+}
+
 const AnalyticsDashboard = () => {
   const auth = useContext(AuthContext);
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [students, setStudents] = useState<{id: string, name: string}[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [studentHistory, setStudentHistory] = useState<StudentHistoryPoint[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     fetchAnalytics();
+    if (auth?.user?.role !== 'student') {
+      fetchStudents();
+    }
   }, []);
+
+  useEffect(() => {
+    if (selectedStudentId) {
+      fetchStudentHistory(selectedStudentId);
+    }
+  }, [selectedStudentId]);
+
+  const fetchStudents = async () => {
+    try {
+      const res = await fetch('/api/users', {
+        headers: { 'Authorization': `Bearer ${auth?.token}` }
+      });
+      if (res.ok) {
+        const users = await res.json();
+        const studentUsers = users.filter((u: any) => u.role === 'student');
+        setStudents(studentUsers);
+        if (studentUsers.length > 0 && !selectedStudentId) {
+          setSelectedStudentId(studentUsers[0].id);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching students:", error);
+    }
+  };
+
+  const fetchStudentHistory = async (studentId: string) => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/results/student?studentId=${studentId}`, {
+        headers: { 'Authorization': `Bearer ${auth?.token}` }
+      });
+      if (res.ok) {
+        const history = await res.json();
+        setStudentHistory(history);
+      }
+    } catch (error) {
+      console.error("Error fetching student history:", error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const fetchAnalytics = async () => {
     setLoading(true);
@@ -287,6 +341,91 @@ const AnalyticsDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Student Score History Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm"
+      >
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <div>
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-blue-600" />
+              Student Performance History
+            </h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Detailed score trends for individual students across all their exams.</p>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest whitespace-nowrap">Select Student:</span>
+            <select 
+              value={selectedStudentId}
+              onChange={(e) => setSelectedStudentId(e.target.value)}
+              className="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-medium px-4 py-2 outline-none text-zinc-900 dark:text-white min-w-[200px]"
+            >
+              {students.map(student => (
+                <option key={student.id} value={student.id}>{student.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className={`h-80 w-full transition-opacity duration-300 ${historyLoading ? 'opacity-50' : 'opacity-100'}`}>
+          {studentHistory.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={studentHistory}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis 
+                  dataKey="submitted_at" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 10, fill: '#94a3b8' }} 
+                  dy={10}
+                  tickFormatter={(val) => new Date(val).toLocaleDateString('en-US', { month: 'short', day: '2-digit' })}
+                />
+                <YAxis 
+                  domain={[0, 100]}
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 10, fill: '#94a3b8' }} 
+                  tickFormatter={(val) => `${val}%`}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    borderRadius: '20px', 
+                    border: 'none', 
+                    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+                    padding: '12px 16px'
+                  }}
+                  labelFormatter={(label) => new Date(label).toLocaleString()}
+                  formatter={(value: number, name: string, props: any) => [
+                    `${Math.round(value)}%`, 
+                    props.payload.exam_title
+                  ]}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="percentage" 
+                  stroke="#3b82f6" 
+                  strokeWidth={4} 
+                  dot={{ r: 6, fill: '#3b82f6', strokeWidth: 3, stroke: '#fff' }}
+                  activeDot={{ r: 8, strokeWidth: 0 }}
+                  animationDuration={1000}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-400 space-y-2">
+              <div className="w-16 h-16 rounded-3xl bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-center mb-2">
+                <BarChart3 className="w-8 h-8 opacity-20" />
+              </div>
+              <p className="font-bold">No history available</p>
+              <p className="text-sm">This student hasn't completed any exams yet.</p>
+            </div>
+          )}
+        </div>
+      </motion.div>
     </div>
   );
 };

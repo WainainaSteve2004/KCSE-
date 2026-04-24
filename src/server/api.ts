@@ -371,6 +371,11 @@ router.post("/submissions", authenticateToken, async (req, res) => {
 
 // Results
 router.get("/results/student", authenticateToken, async (req, res) => {
+  const user = (req as any).user;
+  const studentId = (user.role !== 'student' && req.query.studentId) 
+    ? req.query.studentId 
+    : user.id;
+
   const { data: results, error } = await supabase
     .from('results')
     .select(`
@@ -380,8 +385,8 @@ router.get("/results/student", authenticateToken, async (req, res) => {
         subjects (name)
       )
     `)
-    .eq('student_id', (req as any).user.id)
-    .order('submitted_at', { ascending: false });
+    .eq('student_id', studentId)
+    .order('submitted_at', { ascending: true });
 
   if (error) return res.status(500).json({ error: error.message });
   
