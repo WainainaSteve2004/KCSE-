@@ -996,11 +996,10 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
 
       const examQuestions = exam.questions;
 
-      for (const question of examQuestions) {
+      const evaluateQuestion = async (question: any) => {
         const qId = question.id;
         const data = answers[qId] || {};
         
-        maxPossibleScore += question.marks;
         let aiResult;
 
         try {
@@ -1016,17 +1015,38 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
           aiResult = { score: 0, explanation: "AI marking failed for this question. Error: " + (aiErr?.message || String(aiErr)) };
         }
 
-        const score = aiResult?.score || 0;
+        const score = Number(aiResult?.score) || 0;
         const feedback = aiResult?.explanation || aiResult?.analysis || aiResult?.solution || aiResult?.modelAnswer || "No feedback provided";
-        totalScore += score;
 
-        resultsArray.push({ question_id: qId, score, feedback });
-        answersToInsert.push({
+        return {
           question_id: qId,
+          score,
+          feedback,
           answer_text: data.text || '',
           image_data: data.image || null,
-          ai_score: score,
-          ai_feedback: feedback
+          marks: question.marks
+        };
+      };
+
+      const evaluatedAnswers = [];
+      const batchSize = 3;
+      for (let i = 0; i < examQuestions.length; i += batchSize) {
+        const batch = examQuestions.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch.map(evaluateQuestion));
+        evaluatedAnswers.push(...batchResults);
+      }
+
+      for (const result of evaluatedAnswers) {
+        maxPossibleScore += result.marks;
+        totalScore += result.score;
+
+        resultsArray.push({ question_id: result.question_id, score: result.score, feedback: result.feedback });
+        answersToInsert.push({
+          question_id: result.question_id,
+          answer_text: result.answer_text,
+          image_data: result.image_data,
+          ai_score: result.score,
+          ai_feedback: result.feedback
         });
       }
 
