@@ -933,6 +933,8 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
   const [answers, setAnswers] = useState<any>({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [submitProgress, setSubmitProgress] = useState(-1);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [results, setResults] = useState<any>(null);
 
   useEffect(() => {
@@ -988,6 +990,8 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
 
   const handleSubmit = async () => {
     setSubmitting(true);
+    setSubmitProgress(0);
+    setSubmitError(null);
     try {
       const resultsArray = [];
       const answersToInsert = [];
@@ -995,6 +999,7 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
       let maxPossibleScore = 0;
 
       const examQuestions = exam.questions;
+      let completedQuestions = 0;
 
       const evaluateQuestion = async (question: any) => {
         const qId = question.id;
@@ -1018,6 +1023,9 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
         const score = Number(aiResult?.score) || 0;
         const feedback = aiResult?.explanation || aiResult?.analysis || aiResult?.solution || aiResult?.modelAnswer || "No feedback provided";
 
+        completedQuestions++;
+        setSubmitProgress(Math.round((completedQuestions / examQuestions.length) * 100));
+
         return {
           question_id: qId,
           score,
@@ -1029,10 +1037,20 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
       };
 
       const evaluatedAnswers = [];
-      const batchSize = 3;
+      const batchSize = 5;
       for (let i = 0; i < examQuestions.length; i += batchSize) {
         const batch = examQuestions.slice(i, i + batchSize);
-        const batchResults = await Promise.all(batch.map(evaluateQuestion));
+        
+        // Add a 60-second timeout per batch to prevent infinite hanging
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Exam evaluation timed out. Please try again.")), 60000)
+        );
+        
+        const batchResults = await Promise.race([
+          Promise.all(batch.map(evaluateQuestion)),
+          timeoutPromise
+        ]) as any[];
+        
         evaluatedAnswers.push(...batchResults);
       }
 
@@ -1074,17 +1092,51 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
         setResults({ ...data, results: resultsArray }); // Pass our resultsArray for local display
       } else {
         console.error("Submission failed:", data.error);
-        // Still show locally if server save fails
-        setResults({ totalScore, percentage, results: resultsArray });
+        setSubmitError(data.error || "Failed to save submission. Please try again.");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setSubmitError(e.message || "An unexpected error occurred during submission.");
     } finally {
       setSubmitting(false);
+      setSubmitProgress(-1);
     }
   };
 
   if (!exam) return <div className="flex items-center justify-center h-full dark:text-white">Loading exam...</div>;
+
+  if (submitting) {
+    return (
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="min-h-[80vh] flex flex-col items-center justify-center p-6 text-center"
+      >
+        <div className="w-24 h-24 mb-8">
+          <div className="w-full h-full border-4 border-indigo-200 dark:border-indigo-900 border-t-indigo-600 dark:border-t-indigo-500 rounded-full animate-spin" />
+        </div>
+        <h2 className="text-3xl font-bold text-zinc-900 dark:text-white mb-4">Evaluating Your Exam</h2>
+        <p className="text-zinc-500 dark:text-zinc-400 mb-8 max-w-md mx-auto">
+          Our AI examiner is carefully marking your responses. For larger exams, this evaluation process may take a few moments.
+        </p>
+        
+        {submitProgress >= 0 && (
+          <div className="w-full max-w-md">
+            <div className="bg-zinc-100 dark:bg-zinc-800 rounded-full h-4 overflow-hidden mb-3">
+              <div 
+                className="bg-indigo-600 h-full transition-all duration-500 ease-out" 
+                style={{ width: `${Math.max(0, submitProgress)}%` }}
+              />
+            </div>
+            <p className="text-sm font-bold text-zinc-600 dark:text-zinc-400 flex items-center justify-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+              {submitProgress}% Complete
+            </p>
+          </div>
+        )}
+      </motion.div>
+    );
+  }
 
   if (results) {
     return (
@@ -1154,6 +1206,22 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
 
   return (
     <div className="max-w-5xl mx-auto py-8 space-y-8">
+      {submitError && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 p-6 rounded-3xl flex items-start gap-4">
+          <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="text-red-800 dark:text-red-300 font-bold mb-1">Submission Failed</h3>
+            <p className="text-red-600 dark:text-red-400 text-sm mb-4">{submitError}</p>
+            <button 
+              onClick={handleSubmit}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors"
+            >
+              Try Submitting Again
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
         <div>
           <h1 className="text-xl font-bold text-zinc-900 dark:text-white">{exam.title}</h1>
