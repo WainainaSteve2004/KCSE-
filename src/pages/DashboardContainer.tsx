@@ -937,7 +937,12 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
 
   useEffect(() => {
     if (externalExam) {
-      setExam({ ...externalExam, duration: 60 });
+      // Ensure all questions have IDs to prevent "undefined" key collisions in answers
+      const structuredQuestions = externalExam.questions.map((q: any, idx: number) => ({
+        ...q,
+        id: q.id || `ext_${idx}_${Date.now()}`
+      }));
+      setExam({ ...externalExam, questions: structuredQuestions, duration: 60 });
       setTimeLeft(60 * 60);
     } else if (examId) {
       fetch(`/api/exams/${examId}`, {
@@ -989,11 +994,7 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
       let totalScore = 0;
       let maxPossibleScore = 0;
 
-      // Assign temporary IDs if it's an external exam without IDs
-      const examQuestions = exam.questions.map((q: any, idx: number) => ({
-        ...q,
-        id: q.id || idx + 999990 // Use very high range for temp IDs
-      }));
+      const examQuestions = exam.questions;
 
       for (const question of examQuestions) {
         const qId = question.id;
@@ -1010,9 +1011,9 @@ const ExamPage = ({ examId, externalExam, onFinish }: { examId?: number, externa
           } else if (question.type === 'practical') {
             aiResult = await analyzePracticalImage(question.question_text, data.image || '', data.text || '', question.marks);
           }
-        } catch (aiErr) {
+        } catch (aiErr: any) {
           console.error("AI Marking error for question", qId, aiErr);
-          aiResult = { score: 0, explanation: "AI marking failed for this question." };
+          aiResult = { score: 0, explanation: "AI marking failed for this question. Error: " + (aiErr?.message || String(aiErr)) };
         }
 
         const score = aiResult?.score || 0;

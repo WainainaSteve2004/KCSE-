@@ -3,16 +3,19 @@ import { GoogleGenAI, Type } from "@google/genai";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // Utility to handle retries for AI calls
-async function callAIWithRetry(params: any, retries = 3, delay = 2000): Promise<any> {
+async function callAIWithRetry(params: any, retries = 5, delay = 2000): Promise<any> {
   try {
     return await ai.models.generateContent(params);
   } catch (err: any) {
-    const isRateLimit = err.message?.includes('429') || 
+    const isRetryable = err.status === 429 || err.status === 503 || err.status === 500 ||
+                        err.message?.includes('429') || 
+                        err.message?.includes('503') || 
+                        err.message?.includes('500') ||
                         err.message?.includes('quota') || 
                         err.message?.toLowerCase().includes('rate limit');
     
-    if (retries > 0 && isRateLimit) {
-      console.log(`Rate limit hit, retrying in ${delay}ms... (${retries} attempts left)`);
+    if (retries > 0 && isRetryable) {
+      console.log(`Retryable error hit, retrying in ${delay}ms... (${retries} attempts left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return callAIWithRetry(params, retries - 1, delay * 2);
     }
